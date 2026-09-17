@@ -1,8 +1,13 @@
-> ⚠️ **No affiliation with any cryptocurrency.** OpenMausBot has no token. Any coin using the OpenMausBot, Maus, or SupaMaus name is not created, endorsed, or affiliated with this project or its maintainer. I have received no tokens, payment, or allocation from anyone, and I will not be endorsing any token.
+> ⚠️ **No affiliation with any cryptocurrency.** Agentbot has no token. Any coin using the OpenMausBot, Maus, or SupaMaus name is not created, endorsed, or affiliated with this project or its maintainer. I have received no tokens, payment, or allocation from anyone, and I will not be endorsing any token.
 
 <div align="center">
 
-# OpenMausBot
+# Agentbot
+
+**Your own team of AI bots, in a chat app.**
+
+<sub>by [Agenthosting.app](https://agenthosting.app)</sub>
+
 
 **Your own team of AI bots, in a chat app.**
 
@@ -42,7 +47,7 @@ Talk to them like contacts. Watch them work. Approve what matters.
 <br>
 
 <a href="https://buy.polar.sh/polar_cl_bbnfWFUrWONIF4HnUpZf1p0if0eUYg3HeXct73b48Yg">
-  <img src="https://img.shields.io/badge/%E2%9D%A4%EF%B8%8F%20%20Support%20OpenMausBot-any%20amount%20%C2%B7%20or%20monthly-38d591?style=for-the-badge&labelColor=070707" alt="Support OpenMausBot — one-time any amount or monthly, via Polar" height="40">
+  <img src="https://img.shields.io/badge/%E2%9D%A4%EF%B8%8F%20%20Support%20OpenMausBot-any%20amount%20%C2%B7%20or%20monthly-38d591?style=for-the-badge&labelColor=070707" alt="Support Agentbot — one-time any amount or monthly, via Polar" height="40">
 </a>
 
 <br>

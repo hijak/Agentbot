@@ -1,4 +1,4 @@
-// "About OpenMausBot" — the version you are running and where to go next.
+// "About Agentbot" — the version you are running and where to go next.
 // Small on purpose: the interesting settings live in the settings panel, and
 // this exists so a bug report can quote a version number.
 import { useEffect, useRef } from "react";
@@ -52,6 +52,9 @@ export function AboutDialog({ open, onClose }: { open: boolean; onClose: () => v
         <p className="mt-1 text-[13px] text-ink-secondary">
           Version {appVersion()}
           {platform ? ` · ${platform}` : ""}
+        </p>
+        <p className="mt-0.5 text-[11px] text-ink-tertiary">
+          by Agenthosting.app
         </p>
         <p className="mt-3 text-[13px] leading-relaxed text-ink-secondary">
           An open-source desktop home for your agents. Apache 2.0 licensed.
