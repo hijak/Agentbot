@@ -54,7 +54,15 @@ export function AboutDialog({ open, onClose }: { open: boolean; onClose: () => v
           {platform ? ` · ${platform}` : ""}
         </p>
         <p className="mt-0.5 text-[11px] text-ink-tertiary">
-          by Agenthosting.app
+          by{" "}
+          <a
+            href="http://Agenthosting.app"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-accent hover:underline"
+          >
+            Agenthosting.app
+          </a>
         </p>
         <p className="mt-3 text-[13px] leading-relaxed text-ink-secondary">
           An open-source desktop home for your agents. Apache 2.0 licensed.

@@ -25,9 +25,11 @@ export interface PeerLine {
 }
 
 // The note is one bracketed line with a fixed opening; the wording after
-// the workspace clause varies by delivery and is not needed here.
+// the workspace clause varies by delivery and is not needed here. Both the
+// legacy "OpenMausBot" note (server/peer-provenance.ts still emits it, and
+// old transcripts contain it) and the rebranded "Agentbot" note are accepted.
 const PROVENANCE_NOTE =
-  /^\[(Message from|Delegated by|Thread opened by) @([^,\]]+), another bot in this Agentbot workspace[^\]]*\]\s*/;
+  /^\[(Message from|Delegated by|Thread opened by) @([^,\]]+), another bot in this (?:OpenMausBot|Agentbot) workspace[^\]]*\]\s*/;
 
 const DELIVERY: Record<string, PeerDelivery> = {
   "Message from": "ask_bot",

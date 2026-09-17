@@ -4,10 +4,7 @@
 
 # Agentbot
 
-**Your own team of AI bots, in a chat app.**
-
-<sub>by [Agenthosting.app](https://agenthosting.app)</sub>
-
+<sub>by [Agenthosting.app](http://Agenthosting.app)</sub>
 
 **Your own team of AI bots, in a chat app.**
 
