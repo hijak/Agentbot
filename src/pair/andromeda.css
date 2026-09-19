@@ -197,6 +197,12 @@
   width: 100%;
 }
 
+.andromeda .ah-sidebar-expand {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+}
+
 .andromeda .ah-input,
 .andromeda .ah-textarea {
   width: 100%;

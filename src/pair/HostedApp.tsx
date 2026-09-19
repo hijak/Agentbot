@@ -50,6 +50,7 @@ import {
 } from "@/lib/agenthosting/client";
 import { useDesktopCapabilities } from "@/components/DesktopCapabilities";
 import { AndromedaShell } from "./andromeda/Shell";
+import { SidebarHeader } from "./andromeda/SidebarHeader";
 import { BlobAvatar, effectiveBotAvatar } from "./andromeda/BlobAvatar";
 import { StatusBadge } from "./andromeda/StatusBadge";
 import { useDesktopPaste } from "@/lib/agenthosting/use-desktop-paste";
@@ -957,35 +958,14 @@ export function HostedApp({
             sidebarCollapsed ? (macInset ? "w-[76px]" : "w-12") : "w-60"
           }`}
         >
-          {/* macOS traffic lights sit at {x:16,y:16}; leave a w-14 gutter so the
-              title never sits under them. Windows caption overlay needs top inset. */}
-          <div
-            className={`relative h-14 border-b border-[var(--ah-border-subtle)] px-3 ${
-              macInset ? "pt-3" : winCaption ? "min-h-[56px] pt-[28px] pb-2" : ""
-            }`}
-            style={windowDragStyle}
-          >
-            <div className={`flex h-full min-w-0 items-center pr-10 ${macInset ? "pl-[86px]" : ""}`}>
-              {!sidebarCollapsed ? (
-                <div className="min-w-0 flex-1" style={windowNoDragStyle}>
-                  <div className="ah-mono truncate text-sm font-semibold uppercase tracking-widest">
-                    {agent.name}
-                  </div>
-                </div>
-              ) : (
-                <div className="min-w-0 flex-1" aria-hidden />
-              )}
-              <button
-                type="button"
-                className="ah-btn ah-btn-ghost ah-btn-sm absolute right-3 top-1/2 -translate-y-1/2 px-2"
-                style={windowNoDragStyle}
-                onClick={() => setSidebarCollapsed((v) => !v)}
-                title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-              >
-                {sidebarCollapsed ? "»" : "«"}
-              </button>
-            </div>
-          </div>
+          <SidebarHeader
+            agentId={agent.id}
+            agentName={agent.name}
+            collapsed={sidebarCollapsed}
+            macInset={macInset}
+            winCaption={winCaption}
+            onToggle={() => setSidebarCollapsed((value) => !value)}
+          />
 
           {!sidebarCollapsed && (
             <>
@@ -1189,43 +1169,41 @@ export function HostedApp({
             </>
           )}
 
-          <div className="space-y-0.5 border-t border-[var(--ah-border-subtle)] p-2">
-            <button
-              type="button"
-              className="ah-nav-item"
-              onClick={() => {
-                setShowComputer((v) => {
-                  if (v) setComputerFullscreen(false);
-                  return !v;
-                });
-              }}
-            >
-              {sidebarCollapsed ? "PC" : showComputer ? "Hide computer" : "Show computer"}
-            </button>
-            <button type="button" className="ah-nav-item" onClick={onChangeAgent}>
-              {sidebarCollapsed ? "⇄" : "Switch agent"}
-            </button>
-            {!sidebarCollapsed && (
-              <>
-                <button
-                  type="button"
-                  className="ah-nav-item"
-                  onClick={() => setView("bots")}
-                >
-                  Persona library
-                </button>
-                <button
-                  type="button"
-                  className="ah-nav-item"
-                  onClick={() =>
-                    void window.ogb?.agentHosting?.signOut().then(() => location.replace("/"))
-                  }
-                >
-                  Sign out
-                </button>
-              </>
-            )}
-          </div>
+          {!sidebarCollapsed && (
+            <div className="space-y-0.5 border-t border-[var(--ah-border-subtle)] p-2">
+              <button
+                type="button"
+                className="ah-nav-item"
+                onClick={() => {
+                  setShowComputer((v) => {
+                    if (v) setComputerFullscreen(false);
+                    return !v;
+                  });
+                }}
+              >
+                {showComputer ? "Hide computer" : "Show computer"}
+              </button>
+              <button type="button" className="ah-nav-item" onClick={onChangeAgent}>
+                Switch agent
+              </button>
+              <button
+                type="button"
+                className="ah-nav-item"
+                onClick={() => setView("bots")}
+              >
+                Persona library
+              </button>
+              <button
+                type="button"
+                className="ah-nav-item"
+                onClick={() =>
+                  void window.ogb?.agentHosting?.signOut().then(() => location.replace("/"))
+                }
+              >
+                Sign out
+              </button>
+            </div>
+          )}
         </aside>
 
         <div
