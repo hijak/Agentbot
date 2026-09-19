@@ -5,6 +5,12 @@ const { contextBridge, ipcRenderer, webUtils } = require("electron");
 // Sandboxed preloads receive Electron's restricted `require`, which cannot
 // load sibling CommonJS files. Keep this tiny predicate inline here; main's
 const desktopRemoteClient = process.argv.includes("--openmausbot-remote-client");
+const agentHostingHostedArg = process.argv.find((arg) => arg.startsWith("--omb-agenthosting-hosted="));
+const agentHostingHosted =
+  !desktopRemoteClient &&
+  (agentHostingHostedArg
+    ? agentHostingHostedArg === "--omb-agenthosting-hosted=1"
+    : true);
 
 let pendingPackageInstallUrl = null;
 const packageInstallListeners = new Set();
@@ -101,6 +107,21 @@ const bridge = {
     verifyCode: (email, code) => ipcRenderer.invoke("companion-account:verify-code", email, code),
     retry: () => ipcRenderer.invoke("companion-account:retry"),
     signOut: () => ipcRenderer.invoke("companion-account:sign-out"),
+  },
+  /** AgentHosting thin-client auth. Token stays in main except via session(). */
+  agentHosting: {
+    active: agentHostingHosted,
+    state: () => ipcRenderer.invoke("agenthosting-auth:state"),
+    beginLogin: () => ipcRenderer.invoke("agenthosting-auth:begin-login"),
+    pasteToken: (token) => ipcRenderer.invoke("agenthosting-auth:paste-token", token),
+    selectAgent: (agentId) => ipcRenderer.invoke("agenthosting-auth:select-agent", agentId),
+    signOut: () => ipcRenderer.invoke("agenthosting-auth:sign-out"),
+    session: () => ipcRenderer.invoke("agenthosting-auth:session"),
+    onState: (cb) => {
+      const handler = (_event, state) => cb(state);
+      ipcRenderer.on("agenthosting-auth:state", handler);
+      return () => ipcRenderer.removeListener("agenthosting-auth:state", handler);
+    },
   },
   /** Full/Custom and transitions out of Custom are deliberately unavailable
    * through the loopback API. The local renderer applies those changes over

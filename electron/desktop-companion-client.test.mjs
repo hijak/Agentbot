@@ -42,10 +42,15 @@ describe("desktop companion endpoint", () => {
   it("preserves the local-origin boundary while marking companion client mode", () => {
     expect(desktopCompanionRendererArguments("http://127.0.0.1:8799", null)).toEqual([
       "--omb-local-origin=http://127.0.0.1:8799",
+      "--omb-agenthosting-hosted=1",
     ]);
     expect(desktopCompanionRendererArguments("http://127.0.0.1:8798", access)).toEqual([
       "--omb-local-origin=http://127.0.0.1:8798",
       "--openmausbot-remote-client",
+    ]);
+    expect(desktopCompanionRendererArguments("http://127.0.0.1:8799", null, { hosted: false })).toEqual([
+      "--omb-local-origin=http://127.0.0.1:8799",
+      "--omb-agenthosting-hosted=0",
     ]);
   });
 

@@ -171,6 +171,17 @@ const __APP_VERSION__: string;
         retry(): Promise<CompanionAccountState>;
         signOut(): Promise<CompanionAccountState>;
       };
+      /** AgentHosting thin-client auth; active when this build is the hosted desktop app. */
+      agentHosting?: {
+        active: boolean;
+        state(): Promise<AgentHostingAuthState>;
+        beginLogin(): Promise<AgentHostingAuthState>;
+        pasteToken(token: string): Promise<AgentHostingAuthState>;
+        selectAgent(agentId: string): Promise<AgentHostingAuthState>;
+        signOut(): Promise<AgentHostingAuthState>;
+        session(): Promise<AgentHostingSession>;
+        onState?(cb: (state: AgentHostingAuthState) => void): () => void;
+      };
       /** Local-shell-only bridge for trusted approval-mode transitions. It is
        * absent on remote server pages and in older desktop builds. */
       approvals?: {
@@ -343,6 +354,24 @@ export interface CompanionAccountState {
   email?: string;
   endpoint?: string;
   message?: string;
+}
+
+export interface AgentHostingAuthState {
+  hosted: boolean;
+  signedIn: boolean;
+  tenantName: string | null;
+  selectedAgentId: string | null;
+  dashboardURL: string | null;
+  apiURL: string | null;
+  loginBusy: boolean;
+}
+
+export interface AgentHostingSession {
+  hosted: boolean;
+  token: string | null;
+  apiURL: string | null;
+  dashboardURL: string | null;
+  selectedAgentId?: string | null;
 }
 
 export type AndroidUsbDevice = {

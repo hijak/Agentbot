@@ -21,10 +21,11 @@ const MAX_ERROR_BYTES = 64 * 1024;
 /** Keep Electron's trusted-renderer boundary and companion client marker
  * together. The former was added upstream after client mode shipped; losing
  * either argument makes the renderer unsafe or makes a live relay look local. */
-export function desktopCompanionRendererArguments(localOrigin, remoteAccess) {
+export function desktopCompanionRendererArguments(localOrigin, remoteAccess, { hosted = true } = {}) {
   return [
     `--omb-local-origin=${localOrigin}`,
     ...(remoteAccess ? ["--openmausbot-remote-client"] : []),
+    ...(!remoteAccess && hosted ? ["--omb-agenthosting-hosted=1"] : !remoteAccess ? ["--omb-agenthosting-hosted=0"] : []),
   ];
 }
 

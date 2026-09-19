@@ -66,6 +66,10 @@ import {
   createCompanionAccountService,
   resolveCompanionControlPlaneURL,
 } from "./companion-account-service.mjs";
+import {
+  agentHostingHostedEnabled,
+  createAgentHostingAuthService,
+} from "./agenthosting-auth.mjs";
 import capabilitiesModule from "./capabilities.cjs";
 import environmentsModule from "./environments.cjs";
 import localOriginModule from "./local-origin.cjs";
@@ -619,6 +623,7 @@ installDesktopCrashListeners({
 // module — never through IPC, argv, the environment, or logs.
 let managedCompanionConnector = null;
 let companionAccountService = null;
+let agentHostingAuthService = null;
 let companionDesiredThisLaunch = false;
 let companionLaunchGeneration = 0;
 let advertisementTransition = Promise.resolve();
@@ -895,6 +900,24 @@ function ensureCompanionAccountService() {
     companionIsOn: () => companionDesiredThisLaunch,
   });
   return companionAccountService;
+}
+
+function ensureAgentHostingAuthService() {
+  if (agentHostingAuthService) return agentHostingAuthService;
+  agentHostingAuthService = createAgentHostingAuthService({
+    readCredentials: () => secureCredentialState?.read() ?? secureCredentials,
+    updateCredentials: updateSecureCredentialDocument,
+    broadcast: (channel, payload) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(channel, payload);
+      }
+    },
+    openExternal: async (url) => {
+      await shell.openExternal(externalWebUrl(url));
+    },
+    environment: process.env,
+  });
+  return agentHostingAuthService;
 }
 
 // Everything the bug-report bundle needs. The config summary comes from the
@@ -1892,7 +1915,9 @@ function createWindow() {
       // loopback relay, so it is a trusted local page while also needing the
       // renderer's remote-only feature gates. Keep the two facts independent:
       // upstream's origin boundary must not erase the client-mode marker.
-      additionalArguments: [...desktopCompanionRendererArguments(rendererOrigin(), desktopRemoteAccess),
+      additionalArguments: [...desktopCompanionRendererArguments(rendererOrigin(), desktopRemoteAccess, {
+        hosted: agentHostingHostedEnabled(),
+      }),
         ...(app.isPackaged && !desktopRemoteAccess ? ["--omb-company-desktop=1"] : [])],
     },
   });
@@ -2431,6 +2456,38 @@ ipcMain.handle("companion-account:verify-code", localOnly("companion-account:ver
 ipcMain.handle("companion-account:retry", localOnly("companion-account:retry", () => ensureCompanionAccountService().retry()));
 ipcMain.handle("companion-account:sign-out", localOnly("companion-account:sign-out", () => ensureCompanionAccountService().signOut()));
 
+ipcMain.handle("agenthosting-auth:state", localOnly("agenthosting-auth:state", () => {
+  if (!agentHostingHostedEnabled()) {
+    return { hosted: false, signedIn: false, tenantName: null, selectedAgentId: null, dashboardURL: null, apiURL: null, loginBusy: false };
+  }
+  return ensureAgentHostingAuthService().state();
+}));
+ipcMain.handle("agenthosting-auth:begin-login", localOnly("agenthosting-auth:begin-login", () =>
+  ensureAgentHostingAuthService().beginLogin(),
+));
+ipcMain.handle("agenthosting-auth:paste-token", localOnly("agenthosting-auth:paste-token", (_event, token) =>
+  ensureAgentHostingAuthService().acceptPastedToken(token),
+));
+ipcMain.handle("agenthosting-auth:select-agent", localOnly("agenthosting-auth:select-agent", (_event, agentId) =>
+  ensureAgentHostingAuthService().selectAgent(agentId),
+));
+ipcMain.handle("agenthosting-auth:sign-out", localOnly("agenthosting-auth:sign-out", () =>
+  ensureAgentHostingAuthService().signOut(),
+));
+/** Local renderer only — Bearer for AgentHosting API calls. Never exposed to remote pages. */
+ipcMain.handle("agenthosting-auth:session", localOnly("agenthosting-auth:session", () => {
+  if (!agentHostingHostedEnabled()) return { hosted: false, token: null, apiURL: null, dashboardURL: null };
+  const service = ensureAgentHostingAuthService();
+  const token = service.getToken();
+  return {
+    hosted: true,
+    token: token || null,
+    apiURL: service.getApiURL(),
+    dashboardURL: service.getDashboardURL(),
+    selectedAgentId: service.state().selectedAgentId,
+  };
+}));
+
 const workspaceOnly = (handler) => (event, ...args) => {
   if (!workspaceSenderAllowed(event, mainWindow?.webContents, environmentsState, rendererOrigin())) throw new Error("Workspace controls are only available in the main desktop window");
   return handler(event, ...args);
@@ -2775,13 +2832,15 @@ app.whenReady().then(async () => {
   // Start the CUA daemon before the window so the harness can pick up the
   // connection descriptor on first render. Never blocks window creation on
   // failure — computer use degrades to "unavailable", the rest still works.
+  // Hosted AgentHosting thin client never drives the local host via CUA.
+  const hostedThinClient = agentHostingHostedEnabled() && !desktopRemoteAccess;
   cuaReady =
-    !desktopRemoteAccess && (process.platform === "darwin" || process.platform === "linux" || process.platform === "win32")
+    !desktopRemoteAccess && !hostedThinClient && (process.platform === "darwin" || process.platform === "linux" || process.platform === "win32")
       ? startCua().catch((e) => {
           console.error("[cua] start failed:", e);
           return { mode: "unavailable", reason: String(e) };
         })
-      : Promise.resolve({ mode: "unavailable", reason: "unsupported-platform" });
+      : Promise.resolve({ mode: "unavailable", reason: hostedThinClient ? "agenthosting-hosted" : "unsupported-platform" });
   if (desktopRemoteAccess) {
     try {
       desktopCompanionRelay = await startDesktopCompanionRelay({
