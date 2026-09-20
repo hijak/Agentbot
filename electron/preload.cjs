@@ -26,7 +26,7 @@ ipcRenderer.on("package:install", (_event, url) => {
 // helpers here. Main enforces the same rule on the sensitive channels.
 const localOrigin = process.argv.find((arg) => arg.startsWith("--omb-local-origin="))?.slice("--omb-local-origin=".length) ?? null;
 const isLocalPage = !localOrigin || location.origin === localOrigin;
-const REMOTE_SAFE = new Set(["platform", "getCapabilities", "onCapabilitiesChanged", "applySkin", "setUnreadCount", "permStatus", "workspaces"]);
+const REMOTE_SAFE = new Set(["platform", "arch", "isAppleSilicon", "getCapabilities", "onCapabilitiesChanged", "applySkin", "setUnreadCount", "permStatus", "workspaces"]);
 
 // Sandboxed preload cannot import TS or sibling modules. Keep this list in
 // parity with shared/workspace-backup-client.ts (covered by the preload test).
@@ -59,6 +59,8 @@ if (isLocalPage && !desktopRemoteClient && process.argv.includes("--omb-company-
 const bridge = {
   /** Host platform ("darwin" | "win32" | "linux") — for platform-aware UI. */
   platform: process.platform,
+  arch: process.arch,
+  isAppleSilicon: process.platform === "darwin" && process.arch === "arm64",
   // Safe even on a cloud page: the user chooses in a native menu owned by
   // Electron. No direct switching, saved-list reads, host files or secrets.
   workspaces: {
@@ -149,6 +151,11 @@ const bridge = {
     const handler = (_event, info) => cb(info);
     ipcRenderer.on("speech:end", handler);
     return () => ipcRenderer.removeListener("speech:end", handler);
+  },
+  phoneCalls: {
+    directory: () => ipcRenderer.invoke("phone-calls:directory"),
+    setDirectory: (directory) => ipcRenderer.invoke("phone-calls:set-directory", directory),
+    saveTranscript: (input) => ipcRenderer.invoke("phone-calls:save-transcript", input),
   },
   /** The app menu's Preferences… item; local shell only (the remote-safe
    * subset never sees it). */

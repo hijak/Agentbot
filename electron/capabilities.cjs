@@ -81,6 +81,7 @@ function localComputerReady(platform, connection) {
 
 function desktopCapabilities({
   platform = process.platform,
+  arch = process.arch,
   env = process.env,
   packaged = false,
   localConnection = null,
@@ -91,6 +92,7 @@ function desktopCapabilities({
 } = {}) {
   const hostPlatform = normalizedPlatform(platform);
   const isMac = hostPlatform === "darwin";
+  const isAppleSilicon = isMac && (arch === "arm64" || env.TEST_APPLE_SILICON === "1");
   const hostSession = linuxSession(hostPlatform, env);
   const linuxPreview = hostPlatform === "linux" && hostSession !== "headless";
   const localAvailable = localComputerReady(hostPlatform, localConnection);
@@ -159,6 +161,8 @@ function desktopCapabilities({
     remote: Boolean(remote),
     host: {
       platform: hostPlatform,
+      arch: typeof arch === "string" ? arch : process.arch,
+      isAppleSilicon: Boolean(isAppleSilicon),
       label:
         hostPlatform === "darwin"
           ? "macOS"

@@ -16763,6 +16763,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           if (persisted.opencodeGo?.apiKey !== undefined) persisted.opencodeGo.apiKey = "";
           if (persisted.tts?.key !== undefined) persisted.tts.key = "";
           if (persisted.tts?.fishKey !== undefined) persisted.tts.fishKey = "";
+          if (persisted.tts?.inworldKey !== undefined) persisted.tts.inworldKey = "";
+          if (persisted.tts?.customKey !== undefined) persisted.tts.customKey = "";
           if (persisted.imageGen?.key !== undefined) persisted.imageGen.key = "";
           if (persisted.imageGen?.customApiKey !== undefined) persisted.imageGen.customApiKey = "";
           saveConfig(persisted);
@@ -16895,7 +16897,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     }
     if (method === "GET" && path === "/api/tts/voices") {
       try {
-        return json(res, 200, { voices: await tts.listVoices(cfg) });
+        const queryProvider = url.searchParams.get("provider");
+        const effectiveCfg = queryProvider
+          ? { ...cfg, tts: { ...cfg.tts, provider: queryProvider as any } }
+          : cfg;
+        return json(res, 200, { voices: await tts.listVoices(effectiveCfg) });
       } catch (e) {
         return json(res, 200, { voices: [], error: e instanceof Error ? e.message : String(e) });
       }
@@ -16909,7 +16915,30 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // voice account into an unbounded, billable synthesis job.
       if (text.length > 500) return json(res, 413, { error: "voice utterances are limited to 500 characters" });
       try {
-        const audio = await tts.speak(cfg, text, typeof body.voiceId === "string" ? body.voiceId : undefined);
+        const reqProvider = typeof body.provider === "string" ? body.provider : cfg.tts?.provider;
+        const reqBaseUrl =
+          typeof body.baseUrl === "string" && body.baseUrl.trim()
+            ? body.baseUrl.trim()
+            : reqProvider === "piper" && !cfg.tts?.baseUrl?.trim()
+              ? tts.piper.DEFAULT_PIPER_URL
+              : cfg.tts?.baseUrl;
+        const reqKey = typeof body.key === "string" && body.key.trim() ? body.key.trim() : undefined;
+        const reqModel = typeof body.model === "string" && body.model.trim() ? body.model.trim() : undefined;
+        const effectiveCfg = {
+          ...cfg,
+          tts: {
+            ...cfg.tts,
+            ...(reqProvider ? { provider: reqProvider as any } : {}),
+            ...(reqBaseUrl ? { baseUrl: reqBaseUrl } : {}),
+            ...(reqModel ? { model: reqModel } : {}),
+            ...(reqKey && reqProvider === "elevenlabs" ? { key: reqKey } : {}),
+            ...(reqKey && reqProvider === "fish" ? { fishKey: reqKey } : {}),
+            ...(reqKey && reqProvider === "inworld" ? { inworldKey: reqKey } : {}),
+            ...(reqKey && reqProvider === "custom" ? { customKey: reqKey } : {}),
+          },
+        };
+        const voiceId = typeof body.voiceId === "string" ? body.voiceId : undefined;
+        const audio = await tts.speak(effectiveCfg, text, voiceId);
         res.writeHead(200, {
           "content-type": audio.mime,
           "content-length": String(audio.bytes.byteLength),
@@ -16922,6 +16951,38 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (e instanceof tts.NoVoiceConfigured) return json(res, 409, { error: e.message });
         return json(res, 502, { error: e instanceof Error ? e.message : String(e) });
       }
+    }
+
+    if (method === "GET" && path === "/api/tts/models/status") {
+      const provider = url.searchParams.get("provider");
+      if (provider) {
+        const status = tts.modelManager.getModelStatus(provider);
+        if (!status) return json(res, 404, { error: `Unknown provider ${provider}` });
+        return json(res, 200, status);
+      }
+      return json(res, 200, {
+        kokoro: tts.modelManager.getModelStatus("kokoro"),
+        piper: tts.modelManager.getModelStatus("piper"),
+      });
+    }
+
+    if (method === "POST" && path === "/api/tts/models/download") {
+      const body = await readBody(req);
+      const provider = String(body.provider ?? "").trim();
+      if (!tts.modelManager.isLocalModelProvider(provider)) {
+        return json(res, 400, { error: `Provider ${provider} does not support local model download` });
+      }
+      void tts.modelManager.downloadModel(provider).catch((err) => {
+        console.warn(`[tts] Download failed for ${provider}:`, err);
+      });
+      return json(res, 200, { status: tts.modelManager.getModelStatus(provider) });
+    }
+
+    if (method === "POST" && path === "/api/tts/models/cancel") {
+      const body = await readBody(req);
+      const provider = String(body.provider ?? "").trim();
+      const cancelled = tts.modelManager.cancelDownload(provider);
+      return json(res, 200, { cancelled, status: tts.modelManager.getModelStatus(provider) });
     }
 
     // ── connectors (Composio) ──

@@ -6,11 +6,30 @@
 // is a voice at all.
 import type { AppConfig } from "../config.ts";
 import * as chatterbox from "./chatterbox.ts";
+import * as custom from "./custom.ts";
 import * as elevenlabs from "./elevenlabs.ts";
 import * as fish from "./fish.ts";
+import * as inworld from "./inworld.ts";
+import * as kokoro from "./kokoro.ts";
+import * as piper from "./piper.ts";
 import * as systemVoices from "./system-voices.ts";
 
-export type VoiceProvider = "elevenlabs" | "fish" | "system" | "chatterbox" | "jax-js";
+export * as modelManager from "./model-manager.ts";
+export * as custom from "./custom.ts";
+export * as inworld from "./inworld.ts";
+export * as kokoro from "./kokoro.ts";
+export * as piper from "./piper.ts";
+
+export type VoiceProvider =
+  | "elevenlabs"
+  | "fish"
+  | "inworld"
+  | "custom"
+  | "system"
+  | "chatterbox"
+  | "jax-js"
+  | "kokoro"
+  | "piper";
 
 export const JAX_JS_VOICES: elevenlabs.Voice[] = [
   { id: "alba", label: "Alba", description: "Balanced narrator, warm and clear" },
@@ -42,7 +61,14 @@ export class NoVoiceConfigured extends Error {
 
 export function voiceProvider(cfg: AppConfig): VoiceProvider {
   const provider = cfg.tts?.provider;
-  return provider === "fish" || provider === "system" || provider === "chatterbox" || provider === "jax-js"
+  return provider === "fish" ||
+    provider === "inworld" ||
+    provider === "custom" ||
+    provider === "system" ||
+    provider === "chatterbox" ||
+    provider === "jax-js" ||
+    provider === "kokoro" ||
+    provider === "piper"
     ? provider
     : "elevenlabs";
 }
@@ -54,8 +80,12 @@ export function providerConfigured(cfg: AppConfig): boolean {
   const provider = voiceProvider(cfg);
   if (provider === "jax-js") return true;
   if (provider === "system") return systemVoices.systemVoicesAvailable();
+  if (provider === "kokoro") return kokoro.kokoroAvailable() && Boolean(cfg.tts?.baseUrl?.trim());
+  if (provider === "piper") return true;
   if (provider === "chatterbox") return Boolean(cfg.tts?.baseUrl?.trim());
   if (provider === "fish") return Boolean(cfg.tts?.fishKey);
+  if (provider === "inworld") return Boolean(cfg.tts?.inworldKey || cfg.tts?.key);
+  if (provider === "custom") return Boolean(cfg.tts?.baseUrl?.trim());
   return Boolean(cfg.tts?.key);
 }
 
@@ -65,8 +95,14 @@ export function voiceConfigured(cfg: AppConfig): boolean {
   if (provider === "system") {
     return systemVoices.systemVoicesAvailable() && Boolean(cfg.tts?.voice);
   }
+  if (provider === "kokoro") {
+    return kokoro.kokoroAvailable() && Boolean(cfg.tts?.baseUrl?.trim() && cfg.tts?.voice);
+  }
+  if (provider === "piper") return Boolean(cfg.tts?.voice);
   if (provider === "chatterbox") return Boolean(cfg.tts?.baseUrl?.trim() && cfg.tts?.voice);
   if (provider === "fish") return Boolean(cfg.tts?.fishKey && cfg.tts?.voice);
+  if (provider === "inworld") return Boolean((cfg.tts?.inworldKey || cfg.tts?.key) && cfg.tts?.voice);
+  if (provider === "custom") return Boolean(cfg.tts?.baseUrl?.trim() && cfg.tts?.voice);
   return Boolean(cfg.tts?.key && cfg.tts?.voice);
 }
 
@@ -78,23 +114,31 @@ export function voiceReady(cfg: AppConfig, voiceId?: string): boolean {
   if (provider === "system") {
     return systemVoices.systemVoicesAvailable() && Boolean(voiceId || cfg.tts?.voice);
   }
+  if (provider === "kokoro") {
+    return kokoro.kokoroAvailable() && Boolean(cfg.tts?.baseUrl?.trim() && (voiceId || cfg.tts?.voice));
+  }
+  if (provider === "piper") return Boolean(voiceId || cfg.tts?.voice);
   if (provider === "chatterbox") return Boolean(cfg.tts?.baseUrl?.trim() && (voiceId || cfg.tts?.voice));
   if (provider === "fish") return Boolean(cfg.tts?.fishKey && (voiceId || cfg.tts?.voice));
+  if (provider === "inworld") return Boolean((cfg.tts?.inworldKey || cfg.tts?.key) && (voiceId || cfg.tts?.voice));
+  if (provider === "custom") return Boolean(cfg.tts?.baseUrl?.trim() && (voiceId || cfg.tts?.voice));
   return Boolean(cfg.tts?.key && (voiceId || cfg.tts?.voice));
 }
 
 /** What the settings panel needs. Never includes the key — same write-only
- * rule as every other credential. baseUrl and model are Chatterbox
+ * rule as every other credential. baseUrl and model are Chatterbox/Kokoro/Piper/Custom
  * settings, not credentials, so they come back in full. */
 export function describeVoice(cfg: AppConfig) {
   const provider = voiceProvider(cfg);
+  const isServerUrlProvider =
+    provider === "chatterbox" || provider === "kokoro" || provider === "piper" || provider === "custom";
   return {
     configured: providerConfigured(cfg),
     ready: voiceConfigured(cfg),
     voice: cfg.tts?.voice ?? "",
     provider,
-    baseUrl: provider === "chatterbox" ? (cfg.tts?.baseUrl ?? "") : "",
-    model: provider === "chatterbox" ? (cfg.tts?.model ?? "") : "",
+    baseUrl: isServerUrlProvider ? (cfg.tts?.baseUrl ?? "") : "",
+    model: isServerUrlProvider ? (cfg.tts?.model ?? "") : "",
   };
 }
 
@@ -106,6 +150,14 @@ export async function listVoices(cfg: AppConfig, run?: systemVoices.Runner): Pro
   const provider = voiceProvider(cfg);
   if (provider === "jax-js") return JAX_JS_VOICES;
   if (provider === "system") return systemVoices.listSystemVoices(run);
+  if (provider === "kokoro") {
+    const baseUrl = cfg.tts?.baseUrl?.trim();
+    return baseUrl ? kokoro.listKokoroVoices(baseUrl) : [];
+  }
+  if (provider === "piper") {
+    const baseUrl = cfg.tts?.baseUrl?.trim() || piper.DEFAULT_PIPER_URL;
+    return piper.listPiperVoices(baseUrl);
+  }
   if (provider === "chatterbox") {
     const baseUrl = cfg.tts?.baseUrl?.trim();
     return baseUrl ? chatterbox.listChatterboxVoices(baseUrl) : [];
@@ -113,6 +165,14 @@ export async function listVoices(cfg: AppConfig, run?: systemVoices.Runner): Pro
   if (provider === "fish") {
     const key = cfg.tts?.fishKey;
     return key ? fish.listVoices(key) : [];
+  }
+  if (provider === "inworld") {
+    const key = cfg.tts?.inworldKey || cfg.tts?.key;
+    return inworld.listInworldVoices(key);
+  }
+  if (provider === "custom") {
+    const baseUrl = cfg.tts?.baseUrl?.trim();
+    return baseUrl ? custom.listCustomVoices(baseUrl, cfg.tts?.customKey || cfg.tts?.key) : custom.CUSTOM_FALLBACK_VOICES;
   }
   const key = cfg.tts?.key;
   if (!key) return [];
@@ -135,6 +195,27 @@ export function speak(cfg: AppConfig, text: string, voiceId?: string, run?: syst
     if (!systemVoices.systemVoicesAvailable() && !run) throw new NoVoiceConfigured("key");
     if (!voice) throw new NoVoiceConfigured("voice");
     return systemVoices.synthesizeSystem(text, voice, run);
+  }
+  if (provider === "kokoro") {
+    if (!kokoro.kokoroAvailable(run ? "darwin" : undefined)) {
+      throw new NoVoiceConfigured("key", "Kokoro MLX voice synthesis requires macOS with Apple Silicon.");
+    }
+    const baseUrl = cfg.tts?.baseUrl?.trim();
+    if (!baseUrl) {
+      throw new NoVoiceConfigured(
+        "key",
+        "Add the address of your Kokoro MLX server in Settings on the computer to turn on voice.",
+      );
+    }
+    const voice = voiceId || cfg.tts?.voice;
+    if (!voice) throw new NoVoiceConfigured("voice");
+    return kokoro.synthesizeKokoro(text, voice, baseUrl, cfg.tts?.model);
+  }
+  if (provider === "piper") {
+    const baseUrl = cfg.tts?.baseUrl?.trim() || piper.DEFAULT_PIPER_URL;
+    const voice = voiceId || cfg.tts?.voice;
+    if (!voice) throw new NoVoiceConfigured("voice");
+    return piper.synthesizePiper(text, voice, baseUrl, cfg.tts?.model);
   }
   if (provider === "chatterbox") {
     const baseUrl = cfg.tts?.baseUrl?.trim();
@@ -159,6 +240,30 @@ export function speak(cfg: AppConfig, text: string, voiceId?: string, run?: syst
     const voice = voiceId || cfg.tts?.voice;
     if (!voice) throw new NoVoiceConfigured("voice");
     return fish.synthesize(text, voice, key);
+  }
+  if (provider === "inworld") {
+    const key = cfg.tts?.inworldKey || cfg.tts?.key;
+    if (!key) {
+      throw new NoVoiceConfigured(
+        "key",
+        "Add an Inworld API key in Settings on the computer to turn on voice.",
+      );
+    }
+    const voice = voiceId || cfg.tts?.voice;
+    if (!voice) throw new NoVoiceConfigured("voice");
+    return inworld.synthesizeInworld(text, voice, key, cfg.tts?.model);
+  }
+  if (provider === "custom") {
+    const baseUrl = cfg.tts?.baseUrl?.trim();
+    if (!baseUrl) {
+      throw new NoVoiceConfigured(
+        "key",
+        "Add the address of your custom TTS endpoint in Settings on the computer to turn on voice.",
+      );
+    }
+    const voice = voiceId || cfg.tts?.voice;
+    if (!voice) throw new NoVoiceConfigured("voice");
+    return custom.synthesizeCustom(text, voice, baseUrl, cfg.tts?.customKey || cfg.tts?.key, cfg.tts?.model);
   }
   const key = cfg.tts?.key;
   if (!key) throw new NoVoiceConfigured("key");

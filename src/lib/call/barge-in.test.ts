@@ -21,4 +21,11 @@ describe("BargeInDetector", () => {
     detector.stop();
     expect(detector.isActive).toBe(false);
   });
+
+  it("accepts echo-hardening options without changing defaults", () => {
+    const hardened = new BargeInDetector({ threshold: 0.09, consecutiveFrames: 8, graceMs: 1200 });
+    expect(hardened.isActive).toBe(false);
+    hardened.stop();
+    expect(hardened.isActive).toBe(false);
+  });
 });

@@ -88,6 +88,19 @@ beforeAll(async () => {
         res.writeHead(200, { "content-type": "audio/wav" });
         return res.end(WAV);
       }
+      if (path === "/tts/v1/voice") {
+        if (!req.headers.authorization) return send(401, { message: "unauthorized" });
+        res.writeHead(200, { "content-type": "audio/mpeg" });
+        return res.end(MP3);
+      }
+      if (path === "/tts/v1/voices" || path === "/voices/v1/voices" || path === "/v1/tts/voices") {
+        return send(200, {
+          voices: [
+            { voice_id: "Sarah", name: "Sarah", description: "Warm, natural & engaging narrator" },
+            { voice_id: "Alex", name: "Alex", description: "Clear, balanced & conversational" },
+          ],
+        });
+      }
       if (path === "/v1/models") {
         if (modelsFail) return send(404, { detail: "no models route" });
         return send(200, { data: [{ id: "alex" }, { id: "turbo-en" }] });
@@ -539,4 +552,234 @@ describe("In-browser (jax-js)", () => {
     );
   });
 });
+
+describe("Kokoro (Apple Silicon MLX)", () => {
+  const kokoroCfg = (extra: Partial<AppConfig["tts"]> = {}) => ({ provider: "kokoro" as const, ...extra });
+
+  it("is configured by server address on macOS", async () => {
+    const { providerConfigured, voiceConfigured, voiceReady, describeVoice } = await voice();
+    expect(providerConfigured(cfg(kokoroCfg()))).toBe(false);
+    expect(providerConfigured(cfg(kokoroCfg({ baseUrl: stubBase })))).toBe(true);
+    expect(voiceConfigured(cfg(kokoroCfg({ baseUrl: stubBase })))).toBe(false);
+    expect(voiceConfigured(cfg(kokoroCfg({ baseUrl: stubBase, voice: "af_heart" })))).toBe(true);
+    expect(voiceReady(cfg(kokoroCfg({ baseUrl: stubBase })), "af_heart")).toBe(true);
+    expect(voiceReady(cfg(kokoroCfg({ voice: "af_heart" })), "af_heart")).toBe(false);
+
+    const described = describeVoice(cfg(kokoroCfg({ baseUrl: stubBase, model: "kokoro-82m", voice: "af_heart" })));
+    expect(described).toEqual({
+      configured: true,
+      ready: true,
+      voice: "af_heart",
+      provider: "kokoro",
+      baseUrl: stubBase,
+      model: "kokoro-82m",
+    });
+  });
+
+  it("speaks with the OpenAI audio-speech shape and default kokoro-82m model", async () => {
+    refuse = null;
+    seen.length = 0;
+    const { speak } = await voice();
+    const audio = await speak(cfg(kokoroCfg({ baseUrl: stubBase, voice: "af_heart" })), "Hello from Apple Silicon", undefined, () => Promise.resolve({ stdout: "" }));
+    expect(audio.mime).toBe("audio/wav");
+
+    const call = seen.at(-1)!;
+    expect(call.method).toBe("POST");
+    expect(call.url).toBe("/v1/audio/speech");
+    expect(JSON.parse(call.body)).toEqual({
+      model: "kokoro-82m",
+      input: "Hello from Apple Silicon",
+      voice: "af_heart",
+      response_format: "wav",
+    });
+  });
+
+  it("lists voices from server or defaults", async () => {
+    const { listVoices } = await voice();
+    const voices = await listVoices(cfg(kokoroCfg({ baseUrl: stubBase })));
+    expect(voices.length).toBeGreaterThan(0);
+  });
+
+  it("names missing server address in error", async () => {
+    const { speak, NoVoiceConfigured } = await voice();
+    expect(() => speak(cfg(kokoroCfg()), "hi", undefined, () => Promise.resolve({ stdout: "" }))).toThrow(NoVoiceConfigured);
+    expect(() => speak(cfg(kokoroCfg()), "hi", undefined, () => Promise.resolve({ stdout: "" }))).toThrow(
+      "Add the address of your Kokoro MLX server in Settings on the computer to turn on voice.",
+    );
+  });
+});
+
+describe("Piper (local)", () => {
+  const piperCfg = (extra: Partial<AppConfig["tts"]> = {}) => ({ provider: "piper" as const, ...extra });
+
+  it("is configured zero-config with default endpoint", async () => {
+    const { providerConfigured, voiceConfigured, voiceReady, describeVoice } = await voice();
+    expect(providerConfigured(cfg(piperCfg()))).toBe(true);
+    expect(voiceConfigured(cfg(piperCfg()))).toBe(false);
+    expect(voiceConfigured(cfg(piperCfg({ voice: "en_US-lessac-medium" })))).toBe(true);
+    expect(voiceReady(cfg(piperCfg()), "en_US-lessac-medium")).toBe(true);
+
+    const described = describeVoice(cfg(piperCfg({ voice: "en_US-lessac-medium" })));
+    expect(described).toEqual({
+      configured: true,
+      ready: true,
+      voice: "en_US-lessac-medium",
+      provider: "piper",
+      baseUrl: "",
+      model: "",
+    });
+  });
+
+  it("speaks with the OpenAI audio-speech shape and default piper model", async () => {
+    refuse = null;
+    seen.length = 0;
+    const { speak } = await voice();
+    const audio = await speak(cfg(piperCfg({ baseUrl: stubBase, voice: "en_US-lessac-medium" })), "Hello from Piper");
+    expect(audio.mime).toBe("audio/wav");
+
+    const call = seen.at(-1)!;
+    expect(call.method).toBe("POST");
+    expect(call.url).toBe("/v1/audio/speech");
+    expect(JSON.parse(call.body)).toEqual({
+      model: "piper",
+      input: "Hello from Piper",
+      voice: "en_US-lessac-medium",
+      response_format: "wav",
+    });
+  });
+
+  it("lists Piper fallback voices when server is not running", async () => {
+    const { listVoices } = await voice();
+    const voices = await listVoices(cfg(piperCfg()));
+    expect(voices.length).toBeGreaterThan(0);
+    expect(voices[0].id).toBe("en_US-lessac-medium");
+  });
+
+  it("requires a voice before speaking", async () => {
+    const { speak, NoVoiceConfigured } = await voice();
+    expect(() => speak(cfg(piperCfg()), "hi")).toThrow(NoVoiceConfigured);
+  });
+});
+
+describe("Inworld AI", () => {
+  const inworldCfg = (extra: Partial<AppConfig["tts"]> = {}) => ({ provider: "inworld" as const, ...extra });
+
+  it("is configured by API key", async () => {
+    const { providerConfigured, voiceConfigured, voiceReady, describeVoice } = await voice();
+    expect(providerConfigured(cfg(inworldCfg()))).toBe(false);
+    expect(providerConfigured(cfg(inworldCfg({ inworldKey: "iw-key" })))).toBe(true);
+    expect(voiceConfigured(cfg(inworldCfg({ inworldKey: "iw-key" })))).toBe(false);
+    expect(voiceConfigured(cfg(inworldCfg({ inworldKey: "iw-key", voice: "Sarah" })))).toBe(true);
+    expect(voiceReady(cfg(inworldCfg({ inworldKey: "iw-key" })), "Sarah")).toBe(true);
+
+    const described = describeVoice(cfg(inworldCfg({ inworldKey: "iw-key", voice: "Sarah" })));
+    expect(described).toEqual({
+      configured: true,
+      ready: true,
+      voice: "Sarah",
+      provider: "inworld",
+      baseUrl: "",
+      model: "",
+    });
+  });
+
+  it("speaks with the Inworld REST API", async () => {
+    process.env.AGENTBOT_INWORLD_API = stubBase;
+    refuse = null;
+    seen.length = 0;
+    const { speak } = await voice();
+    const audio = await speak(cfg(inworldCfg({ inworldKey: "test-inworld-key", voice: "Sarah" })), "Hello from Inworld");
+    expect(audio.mime).toBe("audio/mpeg");
+
+    const call = seen.at(-1)!;
+    expect(call.method).toBe("POST");
+    expect(call.url).toBe("/tts/v1/voice");
+    // Inworld keys are Base64 credentials sent directly as `Basic <key>` without re-encoding
+    expect(call.headers.authorization).toBe("Basic test-inworld-key");
+    const payload = JSON.parse(call.body);
+    expect(payload.text).toBe("Hello from Inworld");
+    expect(payload.voice_id).toBe("Sarah");
+    expect(payload.model_id).toBe("inworld-tts-2");
+    // No duplicate camelCase fields — Inworld's protobuf rejects them
+    expect(payload.voiceId).toBeUndefined();
+    expect(payload.modelId).toBeUndefined();
+  });
+
+  it("lists Inworld voices with authorization", async () => {
+    process.env.AGENTBOT_INWORLD_API = stubBase;
+    const { listVoices } = await voice();
+    const voices = await listVoices(cfg(inworldCfg({ inworldKey: "test-inworld-key" })));
+    expect(voices.length).toBeGreaterThanOrEqual(2);
+    expect(voices[0].id).toBe("Sarah");
+  });
+
+  it("builds auth header correctly for various key formats", async () => {
+    const { authHeader } = await import("./inworld.ts");
+    expect(authHeader("my-base64-key")).toBe("Basic my-base64-key");
+    expect(authHeader("Basic already-has-basic")).toBe("Basic already-has-basic");
+    expect(authHeader("Bearer already-has-bearer")).toBe("Bearer already-has-bearer");
+    expect(authHeader("user:secret")).toBe(`Basic ${Buffer.from("user:secret").toString("base64")}`);
+  });
+
+  it("names missing key in error", async () => {
+    const { speak, NoVoiceConfigured } = await voice();
+    expect(() => speak(cfg(inworldCfg()), "hi")).toThrow(NoVoiceConfigured);
+    expect(() => speak(cfg(inworldCfg()), "hi")).toThrow(
+      "Add an Inworld API key in Settings on the computer to turn on voice.",
+    );
+  });
+});
+
+describe("Custom TTS", () => {
+  const customCfg = (extra: Partial<AppConfig["tts"]> = {}) => ({ provider: "custom" as const, ...extra });
+
+  it("is configured by baseUrl", async () => {
+    const { providerConfigured, voiceConfigured, voiceReady, describeVoice } = await voice();
+    expect(providerConfigured(cfg(customCfg()))).toBe(false);
+    expect(providerConfigured(cfg(customCfg({ baseUrl: stubBase })))).toBe(true);
+    expect(voiceConfigured(cfg(customCfg({ baseUrl: stubBase })))).toBe(false);
+    expect(voiceConfigured(cfg(customCfg({ baseUrl: stubBase, voice: "alloy" })))).toBe(true);
+    expect(voiceReady(cfg(customCfg({ baseUrl: stubBase })), "alloy")).toBe(true);
+
+    const described = describeVoice(cfg(customCfg({ baseUrl: stubBase, model: "my-model", voice: "alloy" })));
+    expect(described).toEqual({
+      configured: true,
+      ready: true,
+      voice: "alloy",
+      provider: "custom",
+      baseUrl: stubBase,
+      model: "my-model",
+    });
+  });
+
+  it("speaks with OpenAI-compatible audio/speech request shape", async () => {
+    refuse = null;
+    seen.length = 0;
+    const { speak } = await voice();
+    const audio = await speak(
+      cfg(customCfg({ baseUrl: stubBase, customKey: "sk-custom", model: "custom-tts-1", voice: "alloy" })),
+      "Hello from custom endpoint",
+    );
+    expect(audio.mime).toBe("audio/wav");
+
+    const call = seen.at(-1)!;
+    expect(call.method).toBe("POST");
+    expect(call.url).toBe("/v1/audio/speech");
+    expect(call.headers.authorization).toBe("Bearer sk-custom");
+    const payload = JSON.parse(call.body);
+    expect(payload.model).toBe("custom-tts-1");
+    expect(payload.voice).toBe("alloy");
+    expect(payload.input).toBe("Hello from custom endpoint");
+    expect(payload.text).toBe("Hello from custom endpoint");
+  });
+
+  it("names missing baseUrl in error", async () => {
+    const { speak, NoVoiceConfigured } = await voice();
+    expect(() => speak(cfg(customCfg()), "hi")).toThrow(NoVoiceConfigured);
+    expect(() => speak(cfg(customCfg()), "hi")).toThrow(
+      "Add the address of your custom TTS endpoint in Settings on the computer to turn on voice.",
+    );
+  });
+});
+
 

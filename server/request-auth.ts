@@ -242,6 +242,8 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET"], path: /^\/api\/tts\/voices$/ },
   { methods: ["POST"], path: /^\/api\/tts\/prepare$/ },
   { methods: ["POST"], path: /^\/api\/tts\/speak$/ },
+  { methods: ["GET"], path: /^\/api\/tts\/models\/status$/ },
+  { methods: ["POST"], path: /^\/api\/tts\/models\/(?:download|cancel)$/ },
   // routines: a scheduled message; the input carries no cwd or permission field
   { methods: ["GET"], path: /^\/api\/routines$/ },
   { methods: ["POST"], path: /^\/api\/routines$/ },
@@ -309,6 +311,8 @@ function mutatingPublicRoute(method: string, path: string): boolean {
     /^\/api\/bots\/[\w-]+\/connector-cards\/[\w-]+\/status$/.test(path)
   ) return true;
   if (["GET", "HEAD", "OPTIONS"].includes(upper)) return false;
+  // Read-only TTS synthesis, voice listing, and text preparation do not mutate server state.
+  if (path.startsWith("/api/tts/")) return false;
   // Agent integrations have their own high-entropy, per-boot authorization
   // and narrower route semantics. Pairing-code exchange is intentionally
   // public; possession of the one-time code is its authorization.

@@ -1990,6 +1990,55 @@ ipcMain.handle("desktop:pick-folder", localOnly("desktop:pick-folder", async (ev
   return result.canceled ? null : (result.filePaths[0] ?? null);
 }));
 
+function phoneCallsSettingsFile() {
+  return path.join(app.getPath("userData"), "phone-calls.json");
+}
+
+function defaultPhoneCallsDirectory() {
+  return path.join(app.getPath("documents"), "Agentbot Phone Calls");
+}
+
+function readPhoneCallsDirectory() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(phoneCallsSettingsFile(), "utf8"));
+    if (typeof parsed?.directory === "string" && parsed.directory.trim()) return parsed.directory;
+  } catch {}
+  return defaultPhoneCallsDirectory();
+}
+
+function writePhoneCallsDirectory(directory) {
+  const normalized = path.resolve(directory);
+  fs.mkdirSync(normalized, { recursive: true, mode: 0o700 });
+  fs.mkdirSync(path.dirname(phoneCallsSettingsFile()), { recursive: true });
+  fs.writeFileSync(phoneCallsSettingsFile(), JSON.stringify({ directory: normalized }) + "\n", { mode: 0o600 });
+  return normalized;
+}
+
+ipcMain.handle("phone-calls:directory", localOnly("phone-calls:directory", () => ({ path: readPhoneCallsDirectory() })));
+ipcMain.handle("phone-calls:set-directory", localOnly("phone-calls:set-directory", (_event, directory) => {
+  if (typeof directory !== "string" || !directory.trim()) throw new Error("Phone call folder is required");
+  return { path: writePhoneCallsDirectory(directory) };
+}));
+ipcMain.handle("phone-calls:save-transcript", localOnly("phone-calls:save-transcript", (_event, input) => {
+  if (!input || typeof input !== "object" || typeof input.sessionId !== "string" || !Array.isArray(input.lines)) {
+    throw new Error("Invalid phone call transcript");
+  }
+  const directory = writePhoneCallsDirectory(readPhoneCallsDirectory());
+  const safeId = input.sessionId.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120) || "call";
+  const startedAt = typeof input.startedAt === "string" ? input.startedAt : new Date().toISOString();
+  const date = new Date(startedAt);
+  const stamp = Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
+  const filename = `${stamp.replace(/[:.]/g, "-")}-${safeId}.md`;
+  const lines = input.lines
+    .filter((line) => line && (line.role === "user" || line.role === "assistant") && typeof line.text === "string")
+    .map((line) => `**${line.role === "user" ? "You" : "Agent"}** · ${typeof line.at === "string" ? line.at : stamp}\n\n${line.text.trim()}`)
+    .filter(Boolean);
+  const body = `# Phone call with ${typeof input.agentName === "string" && input.agentName.trim() ? input.agentName.trim() : "Agent"}\n\nStarted: ${stamp}\n\n${lines.join("\n\n")}${lines.length ? "\n" : ""}`;
+  const file = path.join(directory, filename);
+  fs.writeFileSync(file, body, { mode: 0o600 });
+  return { path: file };
+}));
+
 // One-click bug-report bundle. Secrets are never read; the report is
 // redacted again on the way out (diagnostics.mjs). null means the user
 // cancelled the save dialog.
@@ -2434,6 +2483,8 @@ const CREDENTIAL_PATCH = {
   opencodeGoApiKey: (value) => ({ opencodeGo: { apiKey: value } }),
   ttsKey: (value) => ({ tts: { key: value } }),
   fishAudioKey: (value) => ({ tts: { fishKey: value } }),
+  inworldApiKey: (value) => ({ tts: { inworldKey: value } }),
+  customTtsApiKey: (value) => ({ tts: { customKey: value } }),
   openaiImageApiKey: (value) => ({ imageGen: { key: value } }),
   customImageApiKey: (value) => ({ imageGen: { customApiKey: value } }),
 };

@@ -8,8 +8,9 @@ import {
   stopJaxAudio,
   type JaxProgress,
 } from "@/lib/tts/jax-tts";
+import { synthesizeCallAudio } from "@/lib/tts/call-audio";
 import { BargeInDetector } from "@/lib/call/barge-in";
-import { CHARACTER_VOICES } from "./TtsSettingsModal";
+import { voicesForEngine } from "./TtsSettingsModal";
 
 export type CallPhase = "connecting" | "listening" | "sending" | "speaking";
 
@@ -28,6 +29,23 @@ export interface PhoneCallOverlayProps {
   /** Pass the active bot/assistant streaming text to speak */
   latestAssistantReply?: string;
   isStreamingReply?: boolean;
+  sessionId?: string;
+}
+
+type TranscriptLine = { role: "user" | "assistant"; text: string; at: string };
+
+/** The banner label for the active synthesis engine. Every selectable
+ * engine needs a name here: an unnamed one reads as the system fallback
+ * even while its own voice is the one playing. */
+function callEngineLabel(engine: string): string {
+  if (engine === "jax-js") return "Pocket TTS";
+  if (engine === "kokoro") return "Kokoro";
+  if (engine === "piper") return "Piper";
+  if (engine === "elevenlabs") return "ElevenLabs";
+  if (engine === "fish") return "Fish Audio";
+  if (engine === "inworld") return "Inworld";
+  if (engine === "custom") return "Custom";
+  return "System";
 }
 
 export function PhoneCallOverlay({
@@ -44,6 +62,7 @@ export function PhoneCallOverlay({
   onToggleBargeIn,
   latestAssistantReply,
   isStreamingReply,
+  sessionId = "local-call",
 }: PhoneCallOverlayProps) {
   const [phase, setPhase] = useState<CallPhase>("connecting");
   const [downloadProgress, setDownloadProgress] = useState<JaxProgress | null>(null);
@@ -51,11 +70,20 @@ export function PhoneCallOverlay({
   const [liveTranscript, setLiveTranscript] = useState("");
   const [micMuted, setMicMuted] = useState(false);
   const [bargeInTriggered, setBargeInTriggered] = useState(false);
+  const [conversation, setConversation] = useState<TranscriptLine[]>([]);
+  const [callStartedAt, setCallStartedAt] = useState("");
+  const [callDirectory, setCallDirectory] = useState("");
+  const [savedTranscriptPath, setSavedTranscriptPath] = useState("");
+  const [storageNote, setStorageNote] = useState<string | null>(null);
 
   const recognitionRef = useRef<any>(null);
   const bargeInDetectorRef = useRef<BargeInDetector | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const spokenTextRef = useRef<string>("");
+  const conversationRef = useRef<TranscriptLine[]>([]);
+  const nativeSpeechRef = useRef(false);
+  // The engine→voice-list mapping lives with the lists themselves.
+  const voiceOptions = voicesForEngine(engine);
 
   // Format call duration MM:SS
   const formatDuration = (seconds: number) => {
@@ -82,8 +110,12 @@ export function PhoneCallOverlay({
       return;
     }
     bargeInDetectorRef.current = new BargeInDetector({
-      threshold: 0.04,
-      consecutiveFrames: 3,
+      // Speakers leak into the mic: sustained loud energy, not a 150ms
+      // blip, plus a grace window while AEC converges. Headphone users
+      // can still interrupt by speaking over the bot.
+      threshold: 0.09,
+      consecutiveFrames: 8,
+      graceMs: 1200,
     });
     return () => {
       bargeInDetectorRef.current?.stop();
@@ -109,9 +141,48 @@ export function PhoneCallOverlay({
     }
   };
 
+  const persistConversation = (lines: TranscriptLine[]) => {
+    conversationRef.current = lines;
+    setConversation(lines);
+    const payload = {
+      sessionId,
+      agentName,
+      startedAt: callStartedAt || new Date().toISOString(),
+      lines,
+    };
+    if (window.ogb?.phoneCalls?.saveTranscript) {
+      void window.ogb.phoneCalls.saveTranscript(payload).then((result) => {
+        setSavedTranscriptPath(result.path);
+      }).catch(() => setStorageNote("Transcript is visible here but could not be saved locally."));
+    } else {
+      try {
+        localStorage.setItem(`agentbot-phone-call:${sessionId}`, JSON.stringify(payload));
+      } catch {
+        setStorageNote("Transcript is visible here but browser storage is unavailable.");
+      }
+    }
+  };
+
+  const appendTranscript = (role: TranscriptLine["role"], text: string) => {
+    const clean = text.trim();
+    if (!clean) return;
+    const last = conversationRef.current.at(-1);
+    if (last?.role === role && last.text === clean) return;
+    persistConversation([...conversationRef.current, { role, text: clean, at: new Date().toISOString() }]);
+  };
+
   // Start speech recognition
   const startSpeechRecognition = () => {
     if (typeof window === "undefined" || micMuted) return;
+    if (window.ogb?.speechStart) {
+      nativeSpeechRef.current = true;
+      setPhase("listening");
+      void window.ogb.speechStart({ endpointMs: 850 }).catch(() => {
+        setStorageNote("The microphone could not start. Check Microphone and Speech Recognition access.");
+      });
+      return;
+    }
+    nativeSpeechRef.current = false;
     const SpeechRecognition =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -178,6 +249,10 @@ export function PhoneCallOverlay({
   };
 
   const stopSpeechRecognition = () => {
+    if (nativeSpeechRef.current) {
+      void window.ogb?.speechStop();
+      nativeSpeechRef.current = false;
+    }
     if (recognitionRef.current) {
       try {
         recognitionRef.current.abort();
@@ -190,6 +265,8 @@ export function PhoneCallOverlay({
 
   const handleUserUtterance = async (text: string) => {
     stopSpeechRecognition();
+    appendTranscript("user", text);
+    setLiveTranscript(text);
     setPhase("sending");
     spokenTextRef.current = "";
     await onSendMessage(text);
@@ -199,11 +276,44 @@ export function PhoneCallOverlay({
   useEffect(() => {
     if (!active) return;
     setPhase("connecting");
+    const startedAt = new Date().toISOString();
+    setCallStartedAt(startedAt);
+    conversationRef.current = [];
+    setConversation([]);
+    setSavedTranscriptPath("");
+    setStorageNote(null);
     spokenTextRef.current = "";
 
-    // Preload voice if jax-js
+    void window.ogb?.phoneCalls?.directory().then((result) => setCallDirectory(result.path)).catch(() => {});
+    const bridge = window.ogb;
+    const offTranscript = bridge?.onSpeechTranscript((line) => {
+      if (!nativeSpeechRef.current) return;
+      if (line.error) {
+        setStorageNote("Dictation stopped unexpectedly. Check Microphone and Speech Recognition access.");
+        return;
+      }
+      if (typeof line.text !== "string") return;
+      setLiveTranscript(line.text);
+      if (line.partial === false && line.text.trim()) void handleUserUtterance(line.text);
+    });
+    const offEnd = bridge?.onSpeechEnd(({ code }) => {
+      if (!nativeSpeechRef.current) return;
+      if (code === 2) {
+        setStorageNote("Native dictation is unavailable on this platform. Use a Chromium browser with microphone access.");
+      } else if (code !== 0) {
+        setStorageNote("Microphone or Speech Recognition access was denied.");
+      }
+    });
+
+    // Capture starts immediately; loading the playback model must not block the mic.
+    startSpeechRecognition();
+
+    // Preload voice if jax-js. Every engine shares the one cleanup below:
+    // the dictation listeners and mic session belong to the call, not to
+    // the engine, and a jax-js-only early return would keep adding
+    // transcript listeners on every call until each line fired twice.
+    let cancelled = false;
     if (engine === "jax-js") {
-      let cancelled = false;
       loadJaxModel((progress) => {
         if (!cancelled) setDownloadProgress(progress);
       })
@@ -211,23 +321,24 @@ export function PhoneCallOverlay({
           if (!cancelled) {
             setDownloadProgress(null);
             await loadVoiceEmbedding(voice);
-            setPhase("listening");
-            startSpeechRecognition();
+            if (!nativeSpeechRef.current) setPhase("listening");
           }
         })
         .catch((err) => {
           console.error("Failed to load jax-js voice:", err);
-          setPhase("listening");
-          startSpeechRecognition();
+          if (!nativeSpeechRef.current) setPhase("listening");
         });
-
-      return () => {
-        cancelled = true;
-      };
     } else {
-      setPhase("listening");
-      startSpeechRecognition();
+      if (!nativeSpeechRef.current) setPhase("listening");
     }
+
+    return () => {
+      cancelled = true;
+      offTranscript?.();
+      offEnd?.();
+      void window.ogb?.speechStop();
+      nativeSpeechRef.current = false;
+    };
   }, [active, engine]);
 
   // When agent is streaming a reply or finishes
@@ -239,6 +350,7 @@ export function PhoneCallOverlay({
 
     // Full sentence ready to speak
     spokenTextRef.current = latestAssistantReply;
+    appendTranscript("assistant", latestAssistantReply);
     setPhase("speaking");
     stopSpeechRecognition();
 
@@ -257,9 +369,41 @@ export function PhoneCallOverlay({
             voice,
             signal: abort.signal,
           });
+        } else if (
+          engine === "kokoro" ||
+          engine === "piper" ||
+          engine === "system" ||
+          engine === "elevenlabs" ||
+          engine === "fish" ||
+          engine === "inworld" ||
+          engine === "custom"
+        ) {
+          const blob = await synthesizeCallAudio(latestAssistantReply, voice, engine, abort.signal);
+          const url = URL.createObjectURL(blob);
+          const audio = new Audio(url);
+          await new Promise<void>((resolve) => {
+            const finish = () => {
+              URL.revokeObjectURL(url);
+              resolve();
+            };
+            audio.onended = finish;
+            audio.onerror = finish;
+            abort.signal.addEventListener("abort", () => {
+              audio.pause();
+              finish();
+            }, { once: true });
+            audio.play().catch(finish);
+          });
         } else if (typeof window !== "undefined" && "speechSynthesis" in window) {
           await new Promise<void>((resolve) => {
             const utterance = new SpeechSynthesisUtterance(latestAssistantReply);
+            const voices = window.speechSynthesis.getVoices();
+            const matched = voices.find(
+              (v) =>
+                v.name.toLowerCase() === voice.toLowerCase() ||
+                v.voiceURI.toLowerCase() === voice.toLowerCase(),
+            );
+            if (matched) utterance.voice = matched;
             utterance.onend = () => resolve();
             utterance.onerror = () => resolve();
             window.speechSynthesis.speak(utterance);
@@ -270,7 +414,12 @@ export function PhoneCallOverlay({
           console.warn("Speech playback error:", err);
         }
       } finally {
-        bargeInDetectorRef.current?.stop();
+        // Only the latest run owns shared state: a superseded run must not
+        // stop the next run's detector or flip the phase back to listening.
+        if (abortControllerRef.current === abort) {
+          abortControllerRef.current = null;
+          bargeInDetectorRef.current?.stop();
+        }
         if (active && !abort.signal.aborted) {
           setPhase("listening");
           startSpeechRecognition();
@@ -279,6 +428,13 @@ export function PhoneCallOverlay({
     };
 
     void speak();
+
+    return () => {
+      // A newer reply (or unmount) supersedes this one: halt its audio
+      // without touching state owned by the next run.
+      if (abortControllerRef.current === abort) abortControllerRef.current = null;
+      abort.abort();
+    };
   }, [active, latestAssistantReply, isStreamingReply, engine, voice, bargeInEnabled]);
 
   // Cleanup when call ends
@@ -311,7 +467,7 @@ export function PhoneCallOverlay({
             className="rounded-none border border-[var(--ah-border-subtle)] bg-[var(--ah-surface-raised)] px-2.5 py-1 text-xs ah-mono uppercase text-[var(--ah-text-primary)] focus:outline-none focus:border-[var(--ah-accent-400)]"
             title="Character voice"
           >
-            {CHARACTER_VOICES.map((v) => (
+            {voiceOptions.map((v) => (
               <option key={v.id} value={v.id}>
                 {v.name}
               </option>
@@ -360,7 +516,7 @@ export function PhoneCallOverlay({
             {agentName}
           </h2>
           <p className="text-xs text-[var(--ah-text-muted)] mt-1">
-            Voice: {CHARACTER_VOICES.find((v) => v.id === voice)?.name ?? voice} · {engine === "jax-js" ? "Pocket TTS" : "System"}
+            Voice: {voiceOptions.find((v) => v.id === voice)?.name ?? voice} · {callEngineLabel(engine)}
           </p>
         </div>
 
@@ -415,6 +571,35 @@ export function PhoneCallOverlay({
               “{liveTranscript}”
             </p>
           )}
+        </div>
+
+        <div className="w-full space-y-2 text-left">
+          <label htmlFor="phone-call-transcript" className="ah-mono text-[10px] uppercase tracking-wider text-[var(--ah-text-muted)]">
+            Conversation transcript
+          </label>
+          <textarea
+            id="phone-call-transcript"
+            readOnly
+            value={conversation.map((line) => `${line.role === "user" ? "You" : agentName}: ${line.text}`).join("\n\n")}
+            placeholder="Your conversation will appear here as text."
+            className="h-28 w-full resize-none rounded-none border border-[var(--ah-border-subtle)] bg-[var(--ah-surface-raised)] p-3 text-xs leading-relaxed text-[var(--ah-text-primary)] outline-none"
+            aria-label="Phone call conversation transcript"
+          />
+          <div className="flex items-center justify-between gap-2 text-[10px] text-[var(--ah-text-muted)]">
+            <span className="truncate" title={savedTranscriptPath || callDirectory}>{storageNote ?? (savedTranscriptPath ? `Saved locally · ${savedTranscriptPath}` : callDirectory ? `Saving to ${callDirectory}…` : "Saving locally…")}</span>
+            {window.ogb?.pickFolder && (
+              <button
+                type="button"
+                className="shrink-0 underline hover:text-[var(--ah-text-primary)]"
+                onClick={() => void window.ogb?.pickFolder?.(callDirectory).then((chosen) => {
+                  if (!chosen || !window.ogb?.phoneCalls?.setDirectory) return;
+                  return window.ogb.phoneCalls.setDirectory(chosen).then((result) => setCallDirectory(result.path));
+                })}
+              >
+                Change save folder
+              </button>
+            )}
+          </div>
         </div>
       </div>
 

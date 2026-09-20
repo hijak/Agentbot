@@ -95,6 +95,7 @@
     "ajv-formats": "3.0.1",
     "clsx": "^2.1.1",
     "croner": "10.0.1",
+    "kokoro-js": "^1.2.1",
     "lucide-react": "^0.539.0",
     "mdast-util-from-markdown": "^2.0.3",
     "motion": "^12.43.0",

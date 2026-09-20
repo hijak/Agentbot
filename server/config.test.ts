@@ -825,6 +825,8 @@ describe("credential env preference", () => {
     "OPENCODE_API_KEY",
     "AGENTBOT_TTS_KEY",
     "AGENTBOT_FISH_AUDIO_API_KEY",
+    "AGENTBOT_INWORLD_API_KEY",
+    "AGENTBOT_CUSTOM_TTS_API_KEY",
     "AGENTBOT_OPENAI_IMAGE_KEY",
     "COMPOSIO_API_KEY",
   ] as const;
@@ -1040,6 +1042,15 @@ describe("credential env preference", () => {
     syncCredentialEnv({ tts: { fishKey: "fish-new" } });
     expect(process.env.AGENTBOT_TTS_KEY).toBe("eleven-kept");
     expect(process.env.AGENTBOT_FISH_AUDIO_API_KEY).toBe("fish-new");
+  });
+  it("syncCredentialEnv updates Inworld and custom TTS like the other voice keys", () => {
+    process.env.AGENTBOT_TTS_KEY = "eleven-kept";
+    process.env.AGENTBOT_INWORLD_API_KEY = "inworld-old";
+    process.env.AGENTBOT_CUSTOM_TTS_API_KEY = "custom-old";
+    syncCredentialEnv({ tts: { inworldKey: "inworld-new", customKey: "" } });
+    expect(process.env.AGENTBOT_TTS_KEY).toBe("eleven-kept");
+    expect(process.env.AGENTBOT_INWORLD_API_KEY).toBe("inworld-new");
+    expect(process.env.AGENTBOT_CUSTOM_TTS_API_KEY).toBeUndefined();
   });
 
   it("syncCredentialEnv keeps model and provider env in step with a save", () => {

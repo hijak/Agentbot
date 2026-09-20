@@ -45,11 +45,12 @@ export const PREDEFINED_VOICES: Record<string, string> = {
 export type JaxVoiceName = keyof typeof PREDEFINED_VOICES;
 
 export interface JaxProgress {
-  phase: "downloading" | "initializing" | "generating";
+  phase: "downloading" | "initializing" | "generating" | "ready";
   loadedBytes?: number;
   totalBytes?: number;
   percent?: number;
   device?: string;
+  error?: string;
 }
 
 // ── Singleton lazy state ────────────────────────────────────────────────
@@ -70,6 +71,19 @@ export function isJaxVoice(voiceId?: string): boolean {
 
 export function isJaxModelLoaded(): boolean {
   return _model !== null && _tokenizer !== null;
+}
+
+export async function isJaxModelCached(): Promise<boolean> {
+  if (_model && _tokenizer) return true;
+  if (typeof window !== "undefined" && "caches" in window) {
+    try {
+      const match = await window.caches.match(WEIGHTS_URL);
+      if (match) return true;
+    } catch {
+      // ignore
+    }
+  }
+  return false;
 }
 
 export function currentDownloadProgress(): JaxProgress | null {
@@ -174,6 +188,30 @@ export async function loadJaxModel(
 }
 
 /**
+ * Download and activate model weights on activation.
+ * Cached in OPFS / Cache API so it only downloads once.
+ */
+export async function activateJaxModel(
+  onProgress?: (p: JaxProgress) => void,
+  signal?: AbortSignal,
+): Promise<{ model: PocketTTS; tokenizer: tokenizers.SentencePiece }> {
+  const result = await loadJaxModel(onProgress, signal);
+  try {
+    await loadVoiceEmbedding("azelma", signal);
+  } catch {
+    // ignore
+  }
+  const readyEvent: JaxProgress = {
+    phase: "ready",
+    percent: 100,
+    device: _deviceReady ?? undefined,
+  };
+  _lastProgress = readyEvent;
+  onProgress?.(readyEvent);
+  return result;
+}
+
+/**
  * Load voice embedding for a character voice (alba, azelma, etc.).
  * Cached locally once fetched.
  */
@@ -233,6 +271,20 @@ export function prepareTextPrompt(text: string): [string, number] {
   }
 
   return [text, framesAfterEosGuess];
+}
+
+/** Build the text + speaker conditioning sequence without invalidating token indices. */
+export function createConditioningEmbeds(
+  conditionerEmbed: np.Array,
+  voiceEmbed: np.Array,
+  tokens: number[],
+): np.Array {
+  const tokensAr = np.array(tokens, { dtype: np.uint32 });
+  // Array operations consume their arguments. Keep our local token array alive
+  // through the gather by passing an extra reference, then release our owner.
+  const textEmbeds = conditionerEmbed.ref.slice(tokensAr.ref);
+  tokensAr.dispose();
+  return np.concatenate([voiceEmbed.ref, textEmbeds]);
 }
 
 export interface StreamingAudioPlayer {
@@ -385,11 +437,7 @@ export async function speakJaxUtterance(
   onCaption?.(text);
 
   const tokens = tokenizer.encode(promptText);
-  const tokensAr = np.array(tokens, { dtype: np.uint32 });
-  let embeds = model.flowLM.conditionerEmbed.ref.slice(tokensAr);
-  embeds = np.concatenate([voiceEmbed.ref, embeds]);
-
-  tokensAr.dispose();
+  const embeds = createConditioningEmbeds(model.flowLM.conditionerEmbed, voiceEmbed, tokens);
 
   const player = customPlayer ?? createStreamingPlayer();
   _activePlayer = player;

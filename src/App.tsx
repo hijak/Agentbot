@@ -168,7 +168,6 @@ function OpenComputerPreview({
   const [status, setStatus] = useState<"idle" | "connecting" | "open" | "closed" | "missing">("idle");
   const [error, setError] = useState<string | null>(null);
   const [snapshotUrl, setSnapshotUrl] = useState<string | null>(null);
-  const [snapshotRefreshing, setSnapshotRefreshing] = useState(false);
   const [pasteBoxOpen, setPasteBoxOpen] = useState(false);
   const [pasteDraft, setPasteDraft] = useState("");
   const live = fullscreen;
@@ -239,7 +238,6 @@ function OpenComputerPreview({
       return;
     }
     snapshotBusyRef.current = true;
-    setSnapshotRefreshing(true);
     setStatus((current) => (current === "open" ? current : "connecting"));
     setError(null);
     try {
@@ -253,7 +251,6 @@ function OpenComputerPreview({
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       snapshotBusyRef.current = false;
-      setSnapshotRefreshing(false);
     }
   }, [agent, replaceSnapshotUrl, session]);
 
@@ -339,22 +336,19 @@ function OpenComputerPreview({
       ? "h-14 pt-2"
       : "h-14";
 
-  const overlayBusy = live ? status === "connecting" : snapshotRefreshing;
-  const overlayOk = live ? status === "open" : Boolean(snapshotUrl) && status === "open";
+  const overlayBusy = live && status === "connecting";
   const statusLabel = live
     ? status === "open"
       ? "Live"
       : status === "connecting"
         ? "Connecting"
         : "Reconnect"
-    : overlayBusy
-      ? "Updating"
-      : overlayOk
-        ? "Preview"
-        : "Retry";
+    : status === "closed"
+      ? "Retry"
+      : "Preview";
   const canReconnect = live
     ? status !== "open" && status !== "connecting"
-    : !overlayBusy && !overlayOk;
+    : status === "closed";
 
   return (
     <div
@@ -482,7 +476,7 @@ function OpenComputerPreview({
         ) : null}
         {!live && !snapshotUrl ? (
           <div className="absolute inset-0 flex items-center justify-center text-[11px] text-[var(--ah-text-faint)]">
-            {overlayBusy ? "Updating preview…" : "No preview yet"}
+            No preview yet
           </div>
         ) : null}
         {canReconnect ? (
@@ -656,6 +650,7 @@ export function AppWorkspace({
 
   // Phone call and TTS state
   const [onCall, setOnCall] = useState(false);
+  const [phoneCallSessionId, setPhoneCallSessionId] = useState<string | null>(null);
   const [ttsSettingsOpen, setTtsSettingsOpen] = useState(false);
   const [ttsVoice, setTtsVoice] = useState(() => {
     if (typeof window !== "undefined") {
@@ -885,6 +880,41 @@ export function AppWorkspace({
     } finally {
       setBusy(false);
     }
+  };
+
+  const createPhoneCall = async () => {
+    if (!session || !agent || busy || streaming) return;
+    setBusy(true);
+    setError(null);
+    try {
+      abortRef.current?.();
+      setStreaming(false);
+      const created = await createHostedChatSession(session, agent.id, {
+        forceNew: true,
+        source: "agentbot-phone-call",
+        sourceLabel: `Phone call · ${new Date().toLocaleString()}`,
+        title: "Phone call",
+      });
+      setPhoneCallSessionId(created.id);
+      setChatSessionId(created.id);
+      setActiveSessionMeta(created);
+      setMessages([]);
+      setActivityByMessageId({});
+      setPickingTarget(false);
+      setView("chat");
+      await refreshSessions(session, agent.id);
+      setOnCall(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const openPhoneCall = () => {
+    if (!chatSessionId || pickingTarget || busy || streaming || telegramSession) return;
+    setPhoneCallSessionId(chatSessionId);
+    setOnCall(true);
   };
 
   const openChatroomWithSelection = (selectedIds: string[]) => {
@@ -1545,9 +1575,11 @@ export function AppWorkspace({
                     )}
                     <PhoneMenu
                       onCall={onCall}
-                      onStartCall={() => setOnCall(true)}
+                      onCreateCall={() => void createPhoneCall()}
+                      onOpenCall={openPhoneCall}
                       onEndCall={() => setOnCall(false)}
                       onOpenSettings={() => setTtsSettingsOpen(true)}
+                      canOpenCall={Boolean(chatSessionId && !pickingTarget && !busy && !streaming && !telegramSession)}
                       agentName={activeBot || agent.name}
                     />
                   </div>
@@ -1903,6 +1935,7 @@ export function AppWorkspace({
         onToggleBargeIn={handleToggleBargeIn}
         latestAssistantReply={messages.filter((m) => m.role === "assistant").at(-1)?.content}
         isStreamingReply={streaming}
+        sessionId={phoneCallSessionId ?? chatSessionId ?? "local-call"}
       />
 
       {/* TTS Options Modal Overlay */}

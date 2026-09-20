@@ -499,7 +499,7 @@ export interface ConfigStatus {
     configured: boolean;
     ready: boolean;
     voice: string;
-    provider?: "elevenlabs" | "fish" | "system" | "chatterbox" | "jax-js";
+    provider?: "elevenlabs" | "fish" | "inworld" | "custom" | "system" | "chatterbox" | "jax-js" | "kokoro" | "piper";
     baseUrl?: string;
     model?: string;
   };
@@ -945,7 +945,15 @@ export type Action =
       /** Local UI recovery hook for voice flows. Never sent to the server. */
       onError?: (message: string) => void;
     }
-  | { type: "newTask"; botId: string; projectId?: string }
+  | {
+      type: "newTask";
+      botId: string;
+      projectId?: string;
+      title?: string;
+      onCreated?: (bot: Bot) => void;
+      onError?: (message: string) => void;
+      onSettled?: () => void;
+    }
   | { type: "switchTask"; botId: string; threadId: string }
   | { type: "taskSwitched"; bot: Bot }
   | { type: "renameTask"; botId: string; threadId: string; title: string }
@@ -3049,12 +3057,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           const ready = action.type === "newTask"
             ? botPatchQueue.flush(action.botId)
             : Promise.resolve();
-          void ready.then(() => api<{ bot: Bot }>(action.type === "newTask" ? `/api/bots/${action.botId}/tasks` : `/api/bots/${action.botId}/tasks/${action.threadId}`, { method: "POST", body: JSON.stringify(action.type === "newTask" ? { projectId: action.projectId } : {}) }))
+          void ready.then(() => api<{ bot: Bot }>(action.type === "newTask" ? `/api/bots/${action.botId}/tasks` : `/api/bots/${action.botId}/tasks/${action.threadId}`, { method: "POST", body: JSON.stringify(action.type === "newTask" ? { projectId: action.projectId, title: action.title } : {}) }))
             .then((r) => {
               if (!r?.bot || navigation.get(action.botId) !== revision) return;
               dispatch({ type: "taskSwitched", bot: r.bot });
+              if (action.type === "newTask") action.onCreated?.(r.bot);
             })
-            .catch(showError);
+            .catch((error) => {
+              showError(error);
+              if (action.type === "newTask") {
+                action.onError?.(error instanceof Error ? error.message : String(error));
+              }
+            })
+            .finally(() => {
+              if (action.type === "newTask") action.onSettled?.();
+            });
           break;
         }
         case "renameTask":

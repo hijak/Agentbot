@@ -74,23 +74,26 @@ describe("PhoneMenuButton", () => {
     expect(html).toContain('aria-label="End call with Pepper"');
   });
 
-  it("renders dropdown menu with Start a phonecall and Settings options when open", () => {
+  it("renders create and open call actions with Settings when open", () => {
     fixture.onCall = null;
     const html = renderToStaticMarkup(
       createElement(PhoneMenuButton, { bot, defaultMenuOpen: true }),
     );
     expect(html).toContain('role="menu"');
     expect(html).toContain("Phone &amp; Voice");
-    expect(html).toContain("Start a phonecall");
+    expect(html).toContain("Create new call");
+    expect(html).toContain("Open call");
     expect(html).toContain("Settings");
   });
 
-  it("shows End phonecall in dropdown menu when call is active", () => {
+  it("shows End phone call in dropdown menu when call is active", () => {
     fixture.onCall = "test-bot";
     const html = renderToStaticMarkup(
       createElement(PhoneMenuButton, { bot, defaultMenuOpen: true }),
     );
-    expect(html).toContain("End phonecall");
+    expect(html).toContain("End phone call");
+    expect(html).not.toContain("Create new call");
+    expect(html).not.toContain("Open call");
     expect(html).toContain("Settings");
   });
 

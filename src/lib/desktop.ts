@@ -30,7 +30,8 @@ let cached: DesktopCapabilities | null = null;
 let cacheRevision = 0;
 
 export function initialDesktopCapabilities(): DesktopCapabilities {
-  const platform = window.ogb?.platform;
+  const ogb = typeof window !== "undefined" ? window.ogb : undefined;
+  const platform = ogb?.platform;
   if (!platform) return browserCapabilities;
   const isMac = platform === "darwin";
   const dictation: DesktopCapabilities["dictation"] = {
@@ -44,6 +45,8 @@ export function initialDesktopCapabilities(): DesktopCapabilities {
     host: {
       ...browserCapabilities.host,
       platform: platform === "darwin" || platform === "linux" || platform === "win32" ? platform : "other",
+      arch: ogb?.arch,
+      isAppleSilicon: ogb?.isAppleSilicon ?? (isMac && ogb?.arch === "arm64"),
       label: platform === "darwin" ? "macOS" : platform === "linux" ? "Linux" : platform === "win32" ? "Windows" : "Desktop",
     },
     windowChrome: isMac ? "mac-inset" : platform === "win32" ? "win-caption" : "native",

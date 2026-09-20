@@ -28,6 +28,8 @@ const __APP_VERSION__: string;
   type DesktopCapabilities = {
     host: {
       platform: "darwin" | "linux" | "win32" | "other";
+      arch?: string;
+      isAppleSilicon?: boolean;
       /** The user's home folder, for showing paths as ~/… */
       homeDir?: string;
       label: string;
@@ -113,6 +115,8 @@ const __APP_VERSION__: string;
   interface Window {
     ogb?: {
       platform: NodeJS.Platform;
+      arch?: string;
+      isAppleSilicon?: boolean;
       organization?: import("../../electron/managed-desktop.mjs").ManagedDesktopBridge;
       companyBackups?: {
         state(): Promise<CompanyBackupState>;
@@ -209,6 +213,17 @@ const __APP_VERSION__: string;
         cb: (line: { partial?: boolean; text?: string; error?: string }) => void,
       ): () => void;
       onSpeechEnd(cb: (info: { code: number | null; reason?: string }) => void): () => void;
+      /** Local-only phone call transcript storage. */
+      phoneCalls?: {
+        directory(): Promise<{ path: string }>;
+        setDirectory(directory: string): Promise<{ path: string }>;
+        saveTranscript(input: {
+          sessionId: string;
+          agentName: string;
+          startedAt: string;
+          lines: Array<{ role: "user" | "assistant"; text: string; at: string }>;
+        }): Promise<{ path: string }>;
+      };
       /** Absolute path of a dropped File ("" when the drag carried no
        * file on disk). Absent in older builds of the shell. */
       getPathForFile?(file: File): string;
@@ -282,7 +297,7 @@ const __APP_VERSION__: string;
       saveFile?(filePath: string): Promise<string | null>;
       /** Save a provider credential through Electron's OS-backed store. */
       setCredential?(
-        name: "composioApiKey" | "xaiApiKey" | "boxToken" | "opencodeGoApiKey" | "ttsKey" | "fishAudioKey" | "openaiImageApiKey" | "customImageApiKey",
+        name: "composioApiKey" | "xaiApiKey" | "boxToken" | "opencodeGoApiKey" | "ttsKey" | "fishAudioKey" | "inworldApiKey" | "customTtsApiKey" | "openaiImageApiKey" | "customImageApiKey",
         value: string,
       ): Promise<ConfigStatus>;
       /** In-app auto-update (packaged app only; dormant in dev). onState

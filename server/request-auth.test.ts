@@ -279,6 +279,14 @@ describe("resolveRequestAuth", () => {
       request({ host: "127.0.0.1:8799" }, "POST"),
       options("/api/internal/ask-bot"),
     ).auth?.kind).toBe("loopback");
+    expect(resolveRequestAuth(
+      request({ host: "127.0.0.1:8799" }, "POST"),
+      options("/api/tts/speak"),
+    ).auth?.kind).toBe("loopback");
+    expect(resolveRequestAuth(
+      request({ host: "127.0.0.1:8799" }, "POST"),
+      options("/api/tts/prepare"),
+    ).auth?.kind).toBe("loopback");
   });
 
   it("never grants loopback trust to a request that came through a proxy, whatever Host it carries", () => {

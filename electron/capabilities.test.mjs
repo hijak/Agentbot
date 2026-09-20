@@ -221,4 +221,21 @@ describe("desktop capabilities", () => {
       compositor: "gnome-mutter",
     });
   });
+
+  it("identifies Apple Silicon on darwin arm64 and distinguishes Intel/Windows/Linux", () => {
+    const macArm = desktopCapabilities({ platform: "darwin", arch: "arm64", env: {} });
+    expect(macArm.host.isAppleSilicon).toBe(true);
+    expect(macArm.host.arch).toBe("arm64");
+
+    const macIntel = desktopCapabilities({ platform: "darwin", arch: "x64", env: {} });
+    expect(macIntel.host.isAppleSilicon).toBe(false);
+    expect(macIntel.host.arch).toBe("x64");
+
+    const winArm = desktopCapabilities({ platform: "win32", arch: "arm64", env: {} });
+    expect(winArm.host.isAppleSilicon).toBe(false);
+
+    const linuxX64 = desktopCapabilities({ platform: "linux", arch: "x64", env: {} });
+    expect(linuxX64.host.isAppleSilicon).toBe(false);
+  });
 });
+

@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { Phone, PhoneOff, Settings } from "lucide-react";
+import { Phone, PhoneCall, PhoneOff, Settings } from "lucide-react";
 
 export interface PhoneMenuProps {
   onCall: boolean;
-  onStartCall: () => void;
+  onCreateCall: () => void;
+  onOpenCall: () => void;
   onEndCall: () => void;
   onOpenSettings: () => void;
+  canOpenCall?: boolean;
   agentName?: string;
   className?: string;
   defaultMenuOpen?: boolean;
@@ -13,9 +15,11 @@ export interface PhoneMenuProps {
 
 export function PhoneMenu({
   onCall,
-  onStartCall,
+  onCreateCall,
+  onOpenCall,
   onEndCall,
   onOpenSettings,
+  canOpenCall = true,
   agentName = "Agent",
   className = "",
   defaultMenuOpen = false,
@@ -86,27 +90,48 @@ export function PhoneMenu({
             Phone & Voice
           </div>
 
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              setOpen(false);
-              if (onCall) onEndCall();
-              else onStartCall();
-            }}
-            className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs transition-colors hover:bg-[var(--ah-surface-hover)] ${
-              onCall ? "text-[var(--ah-fault-300)]" : "text-[var(--ah-text-primary)]"
-            }`}
-          >
-            {onCall ? (
+          {onCall ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                onEndCall();
+              }}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs text-[var(--ah-fault-300)] transition-colors hover:bg-[var(--ah-surface-hover)]"
+            >
               <PhoneOff size={14} className="shrink-0 text-[var(--ah-fault-400)]" />
-            ) : (
-              <Phone size={14} className="shrink-0 text-[var(--ah-accent-300)]" />
-            )}
-            <span className="flex-1 truncate">
-              {onCall ? "End phonecall" : "Start a phonecall"}
-            </span>
-          </button>
+              <span className="flex-1 truncate">End phone call</span>
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setOpen(false);
+                  onCreateCall();
+                }}
+                className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs text-[var(--ah-text-primary)] transition-colors hover:bg-[var(--ah-surface-hover)]"
+              >
+                <PhoneCall size={14} className="shrink-0 text-[var(--ah-accent-300)]" />
+                <span className="flex-1 truncate">Create new call</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                disabled={!canOpenCall}
+                onClick={() => {
+                  setOpen(false);
+                  onOpenCall();
+                }}
+                className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs text-[var(--ah-text-primary)] transition-colors hover:bg-[var(--ah-surface-hover)] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+              >
+                <Phone size={14} className="shrink-0 text-[var(--ah-text-muted)]" />
+                <span className="flex-1 truncate">Open call</span>
+              </button>
+            </>
+          )}
 
           <button
             type="button"

@@ -10,6 +10,7 @@ const require = createRequire(import.meta.url);
 
 const listeners = new Map(); // channel -> Set<handler>
 const exposed = { name: null, api: null };
+const invoked = []; // { channel, args } for every ipcRenderer.invoke call
 const fakeIpcRenderer = {
   on: (channel, handler) => {
     if (!listeners.has(channel)) listeners.set(channel, new Set());
@@ -18,7 +19,10 @@ const fakeIpcRenderer = {
   removeListener: (channel, handler) => {
     listeners.get(channel)?.delete(handler);
   },
-  invoke: async () => undefined,
+  invoke: async (channel, ...args) => {
+    invoked.push({ channel, args });
+    return undefined;
+  },
   send: () => undefined,
 };
 const fakeElectron = {
@@ -72,4 +76,26 @@ test("onOpenAppSettings subscribes to the exact app:open-settings channel, forwa
   assert.equal(subscriberCount("app:open-settings"), 0);
   emit("app:open-settings");
   assert.equal(cbCalls.length, 2);
+});
+
+test("phoneCalls bridge invokes the exact main-process channels", async () => {
+  // Channel contract: electron/main.mjs handles phone-calls:directory,
+  // phone-calls:set-directory and phone-calls:save-transcript. Invoking any
+  // other name would leave transcript saving inert while the overlay still
+  // renders, so pin the literals on the invoking side too.
+  const bridge = exposed.api.phoneCalls;
+  assert.equal(typeof bridge?.directory, "function");
+  assert.equal(typeof bridge?.setDirectory, "function");
+  assert.equal(typeof bridge?.saveTranscript, "function");
+
+  await bridge.directory();
+  await bridge.setDirectory("/tmp/calls");
+  const input = { sessionId: "abc", agentName: "Pepper", startedAt: "2026-09-20T00:00:00.000Z", lines: [] };
+  await bridge.saveTranscript(input);
+  assert.deepEqual(
+    invoked.map((call) => call.channel),
+    ["phone-calls:directory", "phone-calls:set-directory", "phone-calls:save-transcript"],
+  );
+  assert.deepEqual(invoked[1].args, ["/tmp/calls"]);
+  assert.deepEqual(invoked[2].args, [input]);
 });

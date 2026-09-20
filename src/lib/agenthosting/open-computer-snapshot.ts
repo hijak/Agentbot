@@ -15,6 +15,12 @@ type SnapshotRfb = RFB & {
   toDataURL?: (type?: string, encoderOptions?: number) => string;
 };
 
+/** The noVNC subset wakeDesktop needs; structural so tests can pass fakes. */
+export type WakeTarget = {
+  viewOnly: boolean;
+  sendKey(keysym: number, code: string | null, down?: boolean): void;
+};
+
 function delay(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
@@ -82,10 +88,13 @@ function waitForCanvas(
   });
 }
 
-function wakeDesktop(rfb: SnapshotRfb): void {
+/** Nudge an idle/screensaver'd desktop awake with a bare Shift press. */
+export function wakeDesktop(rfb: WakeTarget): void {
   // Shift alone usually drops xscreensaver / DPMS without clicking anything.
+  // sendKey() writes straight to the VNC socket — never focus the canvas here:
+  // this runs on every docked preview refresh, and focusing steals DOM focus
+  // from the prompt bar mid-typing.
   rfb.viewOnly = false;
-  rfb.focus?.({ preventScroll: true });
   rfb.sendKey(XK_Shift_L, "ShiftLeft", true);
   rfb.sendKey(XK_Shift_L, "ShiftLeft", false);
 }

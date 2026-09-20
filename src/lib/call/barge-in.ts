@@ -16,6 +16,12 @@ export interface BargeInOptions {
   consecutiveFrames?: number;
   /** Polling interval in ms (default: 50ms) */
   pollIntervalMs?: number;
+  /**
+   * Ignore triggers for this long after monitoring starts (default: 0).
+   * Covers AEC convergence and the leading onset of speaker output, which
+   * otherwise reads as a burst of energy and false-triggers on speakers.
+   */
+  graceMs?: number;
 }
 
 export class BargeInDetector {
@@ -33,11 +39,14 @@ export class BargeInDetector {
   private threshold: number;
   private requiredFrames: number;
   private pollIntervalMs: number;
+  private graceMs: number;
+  private monitorStartedAt = 0;
 
   constructor(options: BargeInOptions = {}) {
     this.threshold = options.threshold ?? 0.045;
     this.requiredFrames = options.consecutiveFrames ?? 3;
     this.pollIntervalMs = options.pollIntervalMs ?? 50;
+    this.graceMs = options.graceMs ?? 0;
   }
 
   get isActive(): boolean {
@@ -102,6 +111,7 @@ export class BargeInDetector {
 
       this.active = true;
       this.consecutiveCount = 0;
+      this.monitorStartedAt = Date.now();
 
       const buffer = new Float32Array(this.analyser.fftSize);
       this.timer = setInterval(() => {
@@ -114,6 +124,10 @@ export class BargeInDetector {
         }
         const rms = Math.sqrt(sumSquares / buffer.length);
 
+        if (Date.now() - this.monitorStartedAt < this.graceMs) {
+          this.consecutiveCount = 0;
+          return;
+        }
         if (rms >= this.threshold) {
           this.consecutiveCount += 1;
           if (this.consecutiveCount >= this.requiredFrames) {
@@ -136,6 +150,7 @@ export class BargeInDetector {
   stop(): void {
     this.active = false;
     this.consecutiveCount = 0;
+    this.monitorStartedAt = 0;
     this.onBargeIn = null;
 
     if (this.timer !== null) {

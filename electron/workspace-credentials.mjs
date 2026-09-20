@@ -12,6 +12,8 @@ export const WORKSPACE_CREDENTIALS = [
   { section: "box", field: "token", name: "boxToken", env: "BOX_TOKEN" },
   { section: "tts", field: "key", name: "ttsKey", env: "AGENTBOT_TTS_KEY" },
   { section: "tts", field: "fishKey", name: "fishAudioKey", env: "AGENTBOT_FISH_AUDIO_API_KEY" },
+  { section: "tts", field: "inworldKey", name: "inworldApiKey", env: "AGENTBOT_INWORLD_API_KEY" },
+  { section: "tts", field: "customKey", name: "customTtsApiKey", env: "AGENTBOT_CUSTOM_TTS_API_KEY" },
   { section: "imageGen", field: "key", name: "openaiImageApiKey", env: "AGENTBOT_OPENAI_IMAGE_KEY" },
   { section: "imageGen", field: "customApiKey", name: "customImageApiKey", env: "AGENTBOT_CUSTOM_IMAGE_KEY" },
   { section: "opencodeGo", field: "apiKey", name: "opencodeGoApiKey", env: "OPENCODE_API_KEY" },

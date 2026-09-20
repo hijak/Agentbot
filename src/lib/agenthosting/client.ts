@@ -368,7 +368,7 @@ export async function listHostedChatSessions(
 export async function createHostedChatSession(
   session: HostedSession,
   agentId: string,
-  options?: { context?: "computer"; forceNew?: boolean },
+  options?: { context?: "computer"; forceNew?: boolean; source?: string; sourceLabel?: string; title?: string },
 ): Promise<HostedChatSession> {
   const res = await hostedFetch(session, `/api/agents/${encodeURIComponent(agentId)}/chat/sessions`, {
     method: "POST",

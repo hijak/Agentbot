@@ -8434,6 +8434,7 @@ describe("harness HTTP API", () => {
     const saved = await api("PUT", "/api/config?secretStorage=external", {
       composio: { apiKey: "ak_good" },
       opencodeGo: { apiKey: "opencode-external" },
+      tts: { inworldKey: "inworld-external", customKey: "custom-external" },
       profile: { name: "External Store" },
     });
     expect(saved.status).toBe(200);
@@ -8441,13 +8442,18 @@ describe("harness HTTP API", () => {
     expect(saved.body.opencodeGo).toEqual({ configured: true });
     expect(saved.body.profile).toEqual({ name: "External Store", email: "" });
     expect(JSON.stringify(saved.body)).not.toContain("ak_good");
+    expect(JSON.stringify(saved.body)).not.toContain("inworld-external");
+    expect(JSON.stringify(saved.body)).not.toContain("custom-external");
 
     const disk = JSON.parse(readFileSync(join(home, ".agentbot", "config.json"), "utf8"));
     expect(disk.composio).toMatchObject({ apiKey: "", sessionId: "trs_config_test" });
     expect(disk.opencodeGo).toEqual({ apiKey: "" });
+    expect(disk.tts).toMatchObject({ inworldKey: "", customKey: "" });
     expect(disk.profile).toEqual({ name: "External Store" });
     expect(JSON.stringify(disk)).not.toContain("ak_good");
     expect(JSON.stringify(disk)).not.toContain("opencode-external");
+    expect(JSON.stringify(disk)).not.toContain("inworld-external");
+    expect(JSON.stringify(disk)).not.toContain("custom-external");
 
     // A later ordinary setting save reloads config; the in-process secure-env
     // override must keep Composio configured until the next app launch.

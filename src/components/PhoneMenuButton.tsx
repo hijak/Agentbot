@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Phone, PhoneOff, Settings, Volume2, X } from "lucide-react";
+import { Phone, PhoneCall, PhoneOff, Settings, Volume2, X } from "lucide-react";
 
 import { api, useStore, type Bot } from "@/state/store";
 import { endCall, startCall, useOnCall } from "@/lib/call";
@@ -34,9 +34,25 @@ export function PhoneMenuButton({
 
   const [menuOpen, setMenuOpen] = useState(defaultMenuOpen);
   const [settingsOpen, setSettingsOpen] = useState(defaultSettingsOpen);
+  const [creatingCall, setCreatingCall] = useState(false);
 
   const menuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const mountedRef = useRef(true);
+  const createRequestRef = useRef(0);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      createRequestRef.current += 1;
+    };
+  }, []);
+
+  useEffect(() => {
+    createRequestRef.current += 1;
+    setCreatingCall(false);
+  }, [bot.id]);
 
   const capabilityHelp = capabilitiesReady
     ? callCapabilityHelp(capabilities, typeof window !== "undefined" ? Boolean(window.ogb?.speechStart) : false)
@@ -87,19 +103,38 @@ export function PhoneMenuButton({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [settingsOpen]);
 
-  const handleCallAction = () => {
+  const prepareCall = () => {
     setMenuOpen(false);
-    if (active) {
-      endCall(bot.id);
-      return;
-    }
     if (!voiceReady) {
-      // Prompt user with TTS options modal to configure voice first
       setSettingsOpen(true);
-      return;
+      return false;
     }
+    return true;
+  };
+
+  const openCall = () => {
+    if (!prepareCall()) return;
     track("call_started", { driver: bot.modelSelection?.instanceId });
     startCall(bot.id);
+  };
+
+  const createCall = () => {
+    if (creatingCall || !prepareCall()) return;
+    const request = ++createRequestRef.current;
+    setCreatingCall(true);
+    dispatch({
+      type: "newTask",
+      botId: bot.id,
+      title: "Phone call",
+      onCreated: (created) => {
+        if (!mountedRef.current || createRequestRef.current !== request) return;
+        track("call_started", { driver: created.modelSelection?.instanceId, fresh: true });
+        startCall(created.id);
+      },
+      onSettled: () => {
+        if (mountedRef.current && createRequestRef.current === request) setCreatingCall(false);
+      },
+    });
   };
 
   const handleOpenSettings = () => {
@@ -165,24 +200,42 @@ export function PhoneMenuButton({
             Phone & Voice
           </div>
 
-          <button
-            type="button"
-            role="menuitem"
-            onClick={handleCallAction}
-            className={cn(
-              "flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] transition-colors hover:bg-raised/70",
-              active ? "text-danger hover:bg-danger/10" : "text-ink",
-            )}
-          >
-            {active ? (
+          {active ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setMenuOpen(false);
+                endCall(bot.id);
+              }}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] text-danger transition-colors hover:bg-danger/10"
+            >
               <PhoneOff size={15} className="shrink-0 text-danger" />
-            ) : (
-              <Phone size={15} className="shrink-0 text-ink-secondary" />
-            )}
-            <span className="flex-1 truncate">
-              {active ? "End phonecall" : "Start a phonecall"}
-            </span>
-          </button>
+              <span className="flex-1 truncate">End phone call</span>
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={createCall}
+                disabled={creatingCall}
+                className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] text-ink transition-colors hover:bg-raised/70 disabled:cursor-wait disabled:opacity-50"
+              >
+                <PhoneCall size={15} className="shrink-0 text-ink-secondary" />
+                <span className="flex-1 truncate">{creatingCall ? "Creating call…" : "Create new call"}</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={openCall}
+                className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] text-ink transition-colors hover:bg-raised/70"
+              >
+                <Phone size={15} className="shrink-0 text-ink-secondary" />
+                <span className="flex-1 truncate">Open call</span>
+              </button>
+            </>
+          )}
 
           <button
             type="button"

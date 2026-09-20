@@ -351,13 +351,15 @@ const appConfigSchema = z.object({
   tts: z.object({
     key: optionalText,
     fishKey: optionalText,
+    inworldKey: optionalText,
+    customKey: optionalText,
     voice: optionalText,
-    provider: z.enum(["elevenlabs", "fish", "system", "chatterbox", "jax-js"]).optional(),
+    provider: z.enum(["elevenlabs", "fish", "inworld", "custom", "system", "chatterbox", "jax-js", "kokoro", "piper"]).optional(),
     baseUrl: z
       .string()
       .trim()
       .max(2048)
-      .refine((value) => !value || /^https?:\/\//i.test(value), "the Chatterbox server address must start with http:// or https://")
+      .refine((value) => !value || /^https?:\/\//i.test(value), "the server address must start with http:// or https://")
       .optional(),
     model: optionalText,
   }).optional(),
@@ -432,7 +434,16 @@ export interface AppConfig {
   /** A named host from the user's SSH config. Authentication stays with SSH. */
   vps?: { sshAlias?: string };
   opencodeGo?: { apiKey?: string };
-  tts?: { key?: string; fishKey?: string; voice?: string; provider?: "elevenlabs" | "fish" | "system" | "chatterbox" | "jax-js"; baseUrl?: string; model?: string };
+  tts?: {
+    key?: string;
+    fishKey?: string;
+    inworldKey?: string;
+    customKey?: string;
+    voice?: string;
+    provider?: "elevenlabs" | "fish" | "inworld" | "custom" | "system" | "chatterbox" | "jax-js" | "kokoro" | "piper";
+    baseUrl?: string;
+    model?: string;
+  };
   imageGen?: ImageGenerationConfig;
   profile?: { name?: string; email?: string };
   rooms?: { turnTimeoutMinutes: number; handoffLifetimeMinutes?: number; handoffMinRunwayMinutes?: number; handoffHardCapMinutes?: number };
@@ -749,6 +760,8 @@ export function loadConfig(): AppConfig {
   cfg.tts = { ...cfg.tts };
   if (process.env.AGENTBOT_TTS_KEY !== undefined) cfg.tts.key = process.env.AGENTBOT_TTS_KEY;
   if (process.env.AGENTBOT_FISH_AUDIO_API_KEY !== undefined) cfg.tts.fishKey = process.env.AGENTBOT_FISH_AUDIO_API_KEY;
+  if (process.env.AGENTBOT_INWORLD_API_KEY !== undefined) cfg.tts.inworldKey = process.env.AGENTBOT_INWORLD_API_KEY;
+  if (process.env.AGENTBOT_CUSTOM_TTS_API_KEY !== undefined) cfg.tts.customKey = process.env.AGENTBOT_CUSTOM_TTS_API_KEY;
   cfg.imageGen = { ...cfg.imageGen };
   if (process.env.AGENTBOT_OPENAI_IMAGE_KEY !== undefined) cfg.imageGen.key = process.env.AGENTBOT_OPENAI_IMAGE_KEY;
   if (process.env.AGENTBOT_CUSTOM_IMAGE_KEY !== undefined) cfg.imageGen.customApiKey = process.env.AGENTBOT_CUSTOM_IMAGE_KEY;
@@ -780,6 +793,8 @@ export function syncCredentialEnv(patch: Partial<AppConfig>): void {
     [patch.opencodeGo?.apiKey, "OPENCODE_API_KEY"],
     [patch.tts?.key, "AGENTBOT_TTS_KEY"],
     [patch.tts?.fishKey, "AGENTBOT_FISH_AUDIO_API_KEY"],
+    [patch.tts?.inworldKey, "AGENTBOT_INWORLD_API_KEY"],
+    [patch.tts?.customKey, "AGENTBOT_CUSTOM_TTS_API_KEY"],
     [patch.imageGen?.key, "AGENTBOT_OPENAI_IMAGE_KEY"],
     [patch.imageGen?.customApiKey, "AGENTBOT_CUSTOM_IMAGE_KEY"],
   ];
@@ -818,6 +833,8 @@ export const WORKSPACE_CREDENTIAL_ENV = [
   "OPENCODE_API_KEY",
   "AGENTBOT_TTS_KEY",
   "AGENTBOT_FISH_AUDIO_API_KEY",
+  "AGENTBOT_INWORLD_API_KEY",
+  "AGENTBOT_CUSTOM_TTS_API_KEY",
   "AGENTBOT_OPENAI_IMAGE_KEY",
   "AGENTBOT_CUSTOM_IMAGE_KEY",
   "COMPOSIO_API_KEY",
