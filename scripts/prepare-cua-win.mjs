@@ -42,7 +42,7 @@ async function binaryVersion(candidate) {
 }
 
 async function officialBinary() {
-  const cache = join(root, "node_modules", ".cache", "openmausbot", `cua-driver-${release.version}-win`);
+  const cache = join(root, "node_modules", ".cache", "agentbot", `cua-driver-${release.version}-win`);
   const cachedBinary = join(cache, "cua-driver.exe");
   if ((await binaryVersion(cachedBinary)) === expectedVersion) return cachedBinary;
 
@@ -51,7 +51,7 @@ async function officialBinary() {
   const url = `https://github.com/trycua/cua/releases/download/cua-driver-rs-v${release.version}/${release.file}`;
   console.log(`Downloading CUA Driver ${release.version} from the official release…`);
   const response = await fetch(url, {
-    headers: { "user-agent": "OpenMausBot-packager" },
+    headers: { "user-agent": "Agentbot-packager" },
     signal: AbortSignal.timeout(120_000),
   });
   if (!response.ok) throw new Error(`CUA Driver download failed: HTTP ${response.status}`);
@@ -63,8 +63,8 @@ async function officialBinary() {
   const archive = join(cache, release.file);
   await writeFile(archive, bytes);
   await run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
-    "Expand-Archive -LiteralPath $env:OMB_CUA_ARCHIVE -DestinationPath $env:OMB_CUA_EXTRACT"], {
-    env: { ...process.env, OMB_CUA_ARCHIVE: archive, OMB_CUA_EXTRACT: cache },
+    "Expand-Archive -LiteralPath $env:AGENTBOT_CUA_ARCHIVE -DestinationPath $env:AGENTBOT_CUA_EXTRACT"], {
+    env: { ...process.env, AGENTBOT_CUA_ARCHIVE: archive, AGENTBOT_CUA_EXTRACT: cache },
     timeout: 60_000,
   });
   if ((await binaryVersion(cachedBinary)) !== expectedVersion) {
@@ -129,7 +129,7 @@ await build({
       'export { EmbeddedCuaDriverHost } from "@trycua/cua-driver/embedded";',
     ].join("\n"),
     resolveDir: root,
-    sourcefile: "openmausbot-cua-entry.mjs",
+    sourcefile: "agentbot-cua-entry.mjs",
     loader: "js",
   },
   bundle: true,
@@ -137,7 +137,7 @@ await build({
   target: "node20",
   format: "esm",
   banner: {
-    js: 'import { createRequire as __openmausbotCreateRequire } from "node:module"; const require = __openmausbotCreateRequire(import.meta.url);',
+    js: 'import { createRequire as __agentbotCreateRequire } from "node:module"; const require = __agentbotCreateRequire(import.meta.url);',
   },
   outfile: bundle,
   logLevel: "silent",

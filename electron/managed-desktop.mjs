@@ -25,13 +25,13 @@ export function createManagedDesktopRelay({ timeoutMs = 15_000 } = {}) {
         const requestId = randomUUID();
         const timer = setTimeout(() => settle(requestId, true), timeoutMs); timer.unref?.();
         pending.set(requestId, { proc, resolve, reject, timer });
-        try { proc.postMessage({ type: "openmausbot:managed-desktop", requestId, connection }); }
+        try { proc.postMessage({ type: "agentbot:managed-desktop", requestId, connection }); }
         catch { settle(requestId, true); }
       });
     },
     receive(proc, raw) {
       const message = raw?.data ?? raw;
-      if (message?.type !== "openmausbot:managed-desktop-result") return false;
+      if (message?.type !== "agentbot:managed-desktop-result") return false;
       if (pending.get(message.requestId)?.proc === proc && typeof message.ok === "boolean") settle(message.requestId, !message.ok);
       return true;
     },
@@ -163,7 +163,7 @@ export function createManagedDesktopClient({ store, applyConnection, openBrowser
       if (persisted.status === "fulfilled") { cleanupGrant = null; cleanupNeeded = false; }
       if (!current(stamp)) return snapshot();
       const warnings = [];
-      if (runtime.status === "rejected") warnings.push("The local runtime did not confirm stopping Company tasks. Quit and reopen OpenMausBot before using Company models again.");
+      if (runtime.status === "rejected") warnings.push("The local runtime did not confirm stopping Company tasks. Quit and reopen Agentbot before using Company models again.");
       if (revoked.status === "rejected") warnings.push("The portal was unreachable; ask your administrator to revoke this device there too.");
       if (persisted.status === "rejected") return publish({ status: "unavailable", message: [
         "The saved company sign-in could not be cleared. Unlock your system keychain and Disconnect again before reconnecting.", ...warnings,
@@ -176,7 +176,7 @@ export function createManagedDesktopClient({ store, applyConnection, openBrowser
   async function endAccess(stamp, message) {
     connection = null;
     try { await applyConnection(null); }
-    catch { message += " Quit and reopen OpenMausBot to confirm Company tasks have stopped."; }
+    catch { message += " Quit and reopen Agentbot to confirm Company tasks have stopped."; }
     return current(stamp) ? publish({ status: "reauth-required", message }) : snapshot();
   }
   async function synchronize(stamp) {
@@ -263,7 +263,7 @@ export function createManagedDesktopClient({ store, applyConnection, openBrowser
     async start() {
       const stamp = generation;
       try { const saved = await store.read(); if (!current(stamp)) return snapshot(); grant = saved ? validateGrant(saved) : null; }
-      catch { return current(stamp) ? publish({ status: "unavailable", message: "Company sign-in could not be restored. Unlock your system keychain and restart OpenMausBot." }) : snapshot(); }
+      catch { return current(stamp) ? publish({ status: "unavailable", message: "Company sign-in could not be restored. Unlock your system keychain and restart Agentbot." }) : snapshot(); }
       return refresh();
     },
     async begin(input) {

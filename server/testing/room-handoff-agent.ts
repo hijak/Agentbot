@@ -9,9 +9,9 @@ export async function runRoomHandoffAgent(argv: string[], planPath: string, prom
   const arg = (flag: string) => argv[argv.indexOf(flag) + 1];
   const config = JSON.parse(readFileSync(arg("--mcp-config"), "utf8"));
   const integration = Object.values(config.mcpServers as Record<string, { command: string; args: string[]; env: Record<string, string> }>)
-    .find(s => s.env?.OMB_BOT_ID);
+    .find(s => s.env?.AGENTBOT_BOT_ID);
   if (!integration) throw new Error("The room agent did not receive its agents integration");
-  const botId = integration.env.OMB_BOT_ID;
+  const botId = integration.env.AGENTBOT_BOT_ID;
   const system = readFileSync(arg("--append-system-prompt-file"), "utf8");
   // Claude snapshots the launch-time system prompt for a session. A retained
   // process or --resume launch receives changed turn-scoped instructions in
@@ -88,7 +88,7 @@ export async function runRoomHandoffAgent(argv: string[], planPath: string, prom
     closing = true;
     clearTimeout(timer); clearTimeout(delayTimer); clearInterval(gateTimer); lines.close(); child.stdin.destroy();
     await waitForExit(child, { signal: "SIGTERM", graceMs: 500 });
-    appendFileSync(`${planPath}.evidence.jsonl`, JSON.stringify({ botId, turnIndex, threadId: integration.env.OMB_THREAD_ID,
+    appendFileSync(`${planPath}.evidence.jsonl`, JSON.stringify({ botId, turnIndex, threadId: integration.env.AGENTBOT_THREAD_ID,
       model: argv.includes("--model") ? arg("--model") : undefined,
       permissionMode: argv.includes("--permission-mode") ? arg("--permission-mode") : undefined,
       snapshotMode: argv.includes("--system-prompt-snapshot") ? arg("--system-prompt-snapshot") : undefined,

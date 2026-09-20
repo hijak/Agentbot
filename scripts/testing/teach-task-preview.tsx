@@ -1,13 +1,72 @@
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { HostedTeachTask } from "../../src/pair/HostedTeachTask";
-import { buildTeachTaskPrompt, type TaughtTaskDemonstration } from "../../src/lib/agenthosting/teach-a-task";
-import { AndromedaShell } from "../../src/pair/andromeda/Shell";
+import { TeachTask, type HostedTeachTaskApi } from "../../src/components/TeachTask";
+import type { HostedSession, HostedTeachSession } from "../../src/lib/agenthosting/client";
+import { AndromedaShell } from "../../src/components/andromeda/Shell";
 import "../../src/styles.css";
+
+const hostedSession: HostedSession = {
+  hosted: true,
+  token: "fixture",
+  apiURL: "http://127.0.0.1:9",
+  dashboardURL: "https://dashboard.example.test",
+  selectedAgentId: "fixture-agent",
+};
+
+let current: HostedTeachSession | null = null;
+let polls = 0;
+const teachApi: HostedTeachTaskApi = {
+  async active() {
+    return current?.status === "recording" ? current : null;
+  },
+  async start(input) {
+    current = {
+      id: "11111111-1111-4111-8111-111111111111",
+      name: input.name,
+      notes: input.notes ?? "",
+      status: "recording",
+      startedAt: new Date().toISOString(),
+      result: null,
+    };
+    return current;
+  },
+  async stop(sessionId) {
+    if (!current || current.id !== sessionId) throw new Error("Fixture session not found");
+    current = { ...current, status: "queued", endedAt: new Date().toISOString() };
+    return current;
+  },
+  async status(sessionId) {
+    if (!current || current.id !== sessionId) throw new Error("Fixture session not found");
+    polls += 1;
+    if (current.status === "queued" && polls >= 2) current = { ...current, status: "processing" };
+    if (current.status === "processing" && polls >= 3) {
+      current = {
+        ...current,
+        status: "completed",
+        result: {
+          status: "completed",
+          summary: "Learned the weekly report workflow.",
+          learnedSteps: ["Open the Finance workspace.", "Fill the report fields.", "Verify before submitting."],
+          dryRunPrompt: "Dry run the weekly report skill.",
+          skill: {
+            id: "weekly-report",
+            name: "Weekly Report",
+            description: "Prepares the weekly Finance report.",
+            link: "/skills?skill=weekly-report",
+          },
+        },
+      };
+    }
+    return current;
+  },
+  async cancel() {
+    current = null;
+  },
+};
 
 function Fixture() {
   const desktopRef = useRef<HTMLDivElement | null>(null);
-  const [result, setResult] = useState<TaughtTaskDemonstration | null>(null);
+  const [dryRun, setDryRun] = useState("");
 
   useEffect(() => {
     const canvas = desktopRef.current?.querySelector("canvas");
@@ -42,21 +101,15 @@ function Fixture() {
           />
         </div>
         <section className="ah-card-bordered p-4">
-          <HostedTeachTask
-            desktopRef={desktopRef}
+          <TeachTask
+            session={hostedSession}
+            surfaceId="fixture-surface"
             connected
-            onComplete={(demo) => setResult(demo)}
+            api={teachApi}
+            onDryRun={(prompt) => setDryRun(prompt)}
           />
           <output id="teaching-result" className="mt-4 block whitespace-pre-wrap text-xs">
-            {result
-              ? JSON.stringify({
-                  name: result.name,
-                  notes: result.notes,
-                  events: result.events,
-                  screenshots: result.screenshots.map((file) => file.name),
-                  prompt: buildTeachTaskPrompt(result),
-                })
-              : ""}
+            {dryRun}
           </output>
         </section>
       </main>

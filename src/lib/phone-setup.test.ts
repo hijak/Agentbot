@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import type { CompanionAccountState } from "../types/ogb";
 import {
   claimPhonePairingAttempt,
   closePhonePairingIfOwned,
@@ -24,11 +23,6 @@ import {
   type PhonePairingAttemptLock,
   type PhonePairingAttemptQueue,
 } from "./phone-setup";
-
-const account = (status: CompanionAccountState["status"]): CompanionAccountState => ({
-  available: true,
-  status,
-});
 
 describe("phone setup flow", () => {
   it("refreshes Tailscale before validating an explicit tailnet route", async () => {
@@ -98,27 +92,23 @@ describe("phone setup flow", () => {
     expect(result.enabled).toBe(true);
   });
 
-  it("moves from intro to sign-in and preserves the profile-independent resume path", () => {
+  it("moves from intro to verifying and preserves the profile-independent resume path", () => {
     const started = phoneSetupReducer(initialPhoneSetupFlowState, {
       type: "start",
       deviceIds: ["existing"],
     });
     expect(
       derivePhoneSetupPhase(started, {
-        accountStatus: "signed-out",
-        accountBusy: false,
         provisioning: false,
         pairingOpen: false,
       }),
-    ).toBe("sign-in");
+    ).toBe("verifying");
 
     const skipped = phoneSetupReducer(started, { type: "skip" });
     expect(skipped.skipped).toBe(true);
     expect(skipped.active).toBe(false);
     expect(
       derivePhoneSetupPhase(skipped, {
-        accountStatus: "signed-out",
-        accountBusy: false,
         provisioning: false,
         pairingOpen: false,
       }),
@@ -129,39 +119,27 @@ describe("phone setup flow", () => {
     expect(resumed.skipped).toBe(false);
   });
 
-  it("stops showing provisioning when the secure account fails or times out", () => {
+  it("stays in verifying while provisioning without an account gate", () => {
     const started = phoneSetupReducer(initialPhoneSetupFlowState, {
       type: "start",
       deviceIds: [],
     });
     expect(
       derivePhoneSetupPhase(started, {
-        accountStatus: "error",
-        accountBusy: false,
         provisioning: true,
         pairingOpen: false,
       }),
-    ).toBe("sign-in");
+    ).toBe("verifying");
     expect(
       derivePhoneSetupPhase(started, {
-        accountStatus: "unavailable",
-        accountBusy: false,
-        provisioning: true,
-        pairingOpen: false,
-      }),
-    ).toBe("sign-in");
-    expect(
-      derivePhoneSetupPhase(started, {
-        accountStatus: "connecting",
-        accountBusy: false,
         provisioning: true,
         provisioningTimedOut: true,
         pairingOpen: false,
       }),
-    ).toBe("sign-in");
+    ).toBe("verifying");
   });
 
-  it("waits for hosted HTTPS even when Tailscale is already available", () => {
+  it("requires the hosted route for automatic pairing even when Tailscale is already available", () => {
     const companion = {
       enabled: true,
       endpoints: [{
@@ -170,25 +148,18 @@ describe("phone setup flow", () => {
         priority: 0,
       }],
     };
-    expect(phonePairingGate(account("connecting"), companion, false)).toBe("wait");
-    expect(phonePairingGate(account("ready"), companion, false)).toBe("wait");
-    expect(phonePairingGate(account("signed-out"), companion, false)).toBe("account-required");
-    expect(
-      phonePairingGate({ available: false, status: "signed-out" }, companion, false),
-    ).toBe("account-required");
+    expect(phonePairingGate(companion, false)).toBe("unavailable");
   });
 
   it("opens local pairing only after the explicit Wi-Fi fallback", () => {
     expect(
       phonePairingGate(
-        { available: false, status: "signed-out" },
         { enabled: true, endpoints: [] },
         false,
       ),
-    ).toBe("account-required");
+    ).toBe("unavailable");
     expect(
       phonePairingGate(
-        { available: false, status: "signed-out" },
         { enabled: true, endpoints: [] },
         true,
       ),
@@ -198,7 +169,6 @@ describe("phone setup flow", () => {
   it("opens pairing immediately when the hosted route is ready", () => {
     expect(
       phonePairingGate(
-        account("ready"),
         {
           enabled: true,
           endpoints: [{ kind: "hosted", url: "https://phone.example", priority: 0 }],
@@ -217,14 +187,11 @@ describe("phone setup flow", () => {
         priority: 100,
       }],
     };
-    expect(phonePairingGate(account("signed-out"), tailnet, false)).toBe("account-required");
-    expect(
-      phonePairingGate({ available: false, status: "signed-out" }, tailnet, false),
-    ).toBe("account-required");
-    expect(phonePairingGate(account("signed-out"), tailnet, true)).toBe("open");
+    expect(phonePairingGate(tailnet, false)).toBe("unavailable");
+    expect(phonePairingGate(tailnet, true)).toBe("open");
   });
 
-  it("arms the timeout during account IPC and explicit local setup", () => {
+  it("arms the timeout during companion IPC and explicit local setup", () => {
     const local = phoneSetupReducer(
       phoneSetupReducer(initialPhoneSetupFlowState, { type: "start", deviceIds: [] }),
       { type: "use-local" },
@@ -234,12 +201,10 @@ describe("phone setup flow", () => {
       provisioningTimedOut: false,
     })).toBe(true);
     expect(derivePhoneSetupPhase(local, {
-      accountStatus: "connecting",
-      accountBusy: true,
       provisioning: true,
       provisioningTimedOut: true,
       pairingOpen: false,
-    })).toBe("sign-in");
+    })).toBe("verifying");
   });
 
   it("closes a pairing window that resolves after cancellation", async () => {
@@ -358,8 +323,6 @@ describe("phone setup flow", () => {
     });
     expect(
       derivePhoneSetupPhase(success, {
-        accountStatus: "ready",
-        accountBusy: false,
         provisioning: false,
         pairingOpen: false,
       }),
@@ -396,8 +359,6 @@ describe("phone setup flow", () => {
     });
     expect(
       derivePhoneSetupPhase(success, {
-        accountStatus: "ready",
-        accountBusy: false,
         provisioning: false,
         pairingOpen: false,
       }),
@@ -451,25 +412,26 @@ describe("phone setup flow", () => {
     }, null, 1_000)).toContain("Device pairing did not open");
   });
 
-  it("unwraps Electron IPC account errors without exposing channel machinery", () => {
+  it("unwraps Electron IPC errors without exposing channel machinery", () => {
     const requestId = "c285fe8c-f6f4-41a3-a737-7a2d1faf405a";
     const message = normalizePhoneSetupActionError(
       new Error(
-        `Error invoking remote method 'companion-account:request-code': Error: The secure connection request was not allowed. Try signing in again. Reference: ${requestId}.`,
+        `Error invoking remote method 'companion:start': Error: Too many attempts were made. Reference: ${requestId}.`,
       ),
-      "We could not send the code. Try again.",
+      "Remote access could not start. Try again.",
     );
-    expect(message).toBe(`We could not send the code. Try again. Reference: ${requestId}.`);
+    expect(message).toBe(`Too many attempts were made. Reference: ${requestId}.`);
     expect(message).not.toContain("remote method");
-    expect(message).not.toContain("companion-account");
+    expect(message).not.toContain("companion:start");
   });
 
   it("replaces arbitrary IPC details with calm setup copy", () => {
-    expect(
-      normalizePhoneSetupActionError(
-        new Error("Error invoking remote method 'companion-account:request-code': Error: /private/keychain failed"),
-        "We could not send the code. Try again.",
-      ),
-    ).toBe("We could not send the code. Try again.");
+    const message = normalizePhoneSetupActionError(
+      new Error("Error invoking remote method 'companion:pairing': Error: /private/keychain failed"),
+      "Device pairing could not be prepared. Try again.",
+    );
+    expect(message).toBe("Device pairing could not be prepared. Try again.");
+    expect(message).not.toContain("remote method");
+    expect(message).not.toContain("companion:pairing");
   });
 });

@@ -109,7 +109,7 @@ export async function mintOpenComputerSession(
 ): Promise<{ url: string }> {
   const res = await hostedFetch(
     session,
-    `/agent-extensions/open-computer/${encodeURIComponent(surfaceId)}/session`,
+    openComputerApiPath(surfaceId, "/session"),
     { method: "POST" },
   );
   if (!res.ok) {
@@ -135,12 +135,116 @@ export function openComputerDesktopWsUrl(session: HostedSession, sessionUrl: str
   return ws.toString();
 }
 
+export type HostedTeachTaskResult = {
+  status: "completed" | "failed";
+  completedAt?: string;
+  failedAt?: string;
+  error?: string;
+  skill?: {
+    id: string;
+    name: string;
+    description: string;
+    link: string;
+  };
+  summary?: string;
+  learnedSteps?: string[];
+  dryRunPrompt?: string;
+};
+
+export type HostedTeachSession = {
+  id: string;
+  name: string;
+  notes: string;
+  status: "recording" | "queued" | "processing" | "completed" | "failed";
+  startedAt: string;
+  endedAt?: string | null;
+  durationSeconds?: number;
+  error?: string;
+  result?: HostedTeachTaskResult | null;
+};
+
+function openComputerApiPath(surfaceId: string, path: string): string {
+  return `/agent-extensions/open-computer/${encodeURIComponent(surfaceId)}${path}`;
+}
+
+export async function startHostedTeachSession(
+  session: HostedSession,
+  surfaceId: string,
+  input: { name: string; notes?: string },
+): Promise<HostedTeachSession> {
+  const res = await hostedFetch(session, openComputerApiPath(surfaceId, "/api/v1/teach-sessions"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return readJson(res, "Failed to start the teaching recording");
+}
+
+export async function getHostedTeachSession(
+  session: HostedSession,
+  surfaceId: string,
+  teachSessionId: string,
+): Promise<HostedTeachSession> {
+  const res = await hostedFetch(
+    session,
+    openComputerApiPath(surfaceId, `/api/v1/teach-sessions/${encodeURIComponent(teachSessionId)}`),
+  );
+  return readJson(res, "Failed to read the teaching session");
+}
+
+export async function getActiveHostedTeachSession(
+  session: HostedSession,
+  surfaceId: string,
+): Promise<HostedTeachSession | null> {
+  const res = await hostedFetch(
+    session,
+    openComputerApiPath(surfaceId, "/api/v1/teach-sessions/active"),
+  );
+  const body = await readJson<{ session?: HostedTeachSession | null }>(
+    res,
+    "Failed to read the active teaching session",
+  );
+  return body.session ?? null;
+}
+
+export async function stopHostedTeachSession(
+  session: HostedSession,
+  surfaceId: string,
+  teachSessionId: string,
+): Promise<HostedTeachSession> {
+  const res = await hostedFetch(
+    session,
+    openComputerApiPath(surfaceId, `/api/v1/teach-sessions/${encodeURIComponent(teachSessionId)}/stop`),
+    { method: "POST" },
+  );
+  return readJson(res, "Failed to stop the teaching recording");
+}
+
+export async function cancelHostedTeachSession(
+  session: HostedSession,
+  surfaceId: string,
+  teachSessionId: string,
+): Promise<void> {
+  const res = await hostedFetch(
+    session,
+    openComputerApiPath(surfaceId, `/api/v1/teach-sessions/${encodeURIComponent(teachSessionId)}`),
+    { method: "DELETE" },
+  );
+  await readJson(res, "Failed to discard the teaching recording");
+}
+
 export type HostedChatHandlers = {
   onChunk: (text: string) => void;
   onStatus?: (status: string) => void;
   onDone: (sessionId: string) => void;
   onError: (err: string) => void;
-  onTool?: (event: { type: string; toolName?: string; message?: string }) => void;
+  onTool?: (event: {
+    type: string;
+    toolName?: string;
+    message?: string;
+    input?: string;
+    output?: string;
+  }) => void;
   onApproval?: (approval: { runId: string; command?: string; reason?: string }) => void;
 };
 
@@ -163,6 +267,7 @@ export type HostedPersistedMessage = {
   content: string;
   createdAt: string;
   attachments?: HostedChatAttachment[];
+  metadata?: Record<string, unknown> | null;
 };
 
 export type HostedBotRoutine = {
@@ -790,6 +895,8 @@ export async function streamHostedChat(
                 type: data.type,
                 toolName: typeof data.toolName === "string" ? data.toolName : undefined,
                 message: typeof data.message === "string" ? data.message : undefined,
+                input: typeof data.input === "string" ? data.input : undefined,
+                output: typeof data.output === "string" ? data.output : undefined,
               });
             } else if (data.type === "approval_request") {
               const approval =

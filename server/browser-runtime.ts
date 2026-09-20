@@ -59,7 +59,7 @@ class BrowserClient {
     this.child.on("close", () => { void this.stop(new TransportError("Browser connection closed.")); });
     this.ready = this.rpc("initialize", {
       protocolVersion: "2024-11-05", capabilities: {},
-      clientInfo: { name: "openmausbot-browser", version: "1" },
+      clientInfo: { name: "agentbot-browser", version: "1" },
     }).then((result) => {
       if (!result || typeof result !== "object" || !("protocolVersion" in result)) {
         throw new TransportError("Browser engine returned an invalid handshake.");
@@ -177,7 +177,7 @@ export class BrowserRuntime {
   private options: { requestTimeoutMs: number; takeoverTimeoutMs: number; idleMs: number; maxPending: number; resultBudget: number };
 
   constructor(options: Partial<BrowserRuntime["options"]> = {}) {
-    const budget = Number(process.env.OMB_BROWSER_RESULT_BUDGET);
+    const budget = Number(process.env.AGENTBOT_BROWSER_RESULT_BUDGET);
     this.options = { requestTimeoutMs: 120_000, takeoverTimeoutMs: 15_000, idleMs: 60_000, maxPending: 16, resultBudget: Number.isFinite(budget) && budget > 0 ? budget : DEFAULT_BROWSER_RESULT_BUDGET, ...options };
   }
 

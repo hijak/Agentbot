@@ -1,16 +1,14 @@
 // Sign in with your email on a hosted server. The emailed code comes from the
-// OpenMausBot control plane (the account service the desktop companion and
-// `openmausbot login` already use), and this server decides who is welcome
+// Agentbot control plane, and this server decides who is welcome
 // with an allow-list its owner controls. The result is an ordinary local
 // session, the same thing a pairing code produces, so every gate applies.
 //
 // Why through the control plane rather than a mail provider per server: a
 // self-hoster then needs no email credentials at all; the code arrives from
-// accounts.openmausbot.com. The exchange happens server-side, so a browser
+// accounts.agentbot.com. The exchange happens server-side, so a browser
 // only ever talks to this server, and a server with an empty allow-list does
 // not expose the routes.
-import { resolveCompanionControlPlaneURL } from "../electron/companion-account-service.mjs";
-import { ControlPlaneError, createControlPlaneClient, normalizeAccountEmail, type ControlPlaneClient } from "../electron/control-plane-client.mjs";
+import { ControlPlaneError, createControlPlaneClient, normalizeAccountEmail, resolveCompanionControlPlaneURL, type ControlPlaneClient } from "../electron/control-plane-client.mjs";
 import type { Scope } from "./sessions.ts";
 
 /** Who may sign in. `a@b.com` is that address; `@b.com` is everyone at b.com. */
@@ -19,8 +17,8 @@ export interface SignInAllowList {
   members: string[];
 }
 
-export const ADMIN_EMAILS_ENV = "OMB_SIGNIN_EMAILS";
-export const MEMBER_EMAILS_ENV = "OMB_SIGNIN_MEMBER_EMAILS";
+export const ADMIN_EMAILS_ENV = "AGENTBOT_SIGNIN_EMAILS";
+export const MEMBER_EMAILS_ENV = "AGENTBOT_SIGNIN_MEMBER_EMAILS";
 
 /** Commas, spaces or newlines between entries; case does not matter. */
 export function parseAllowList(value: string | undefined | null): string[] {
@@ -65,7 +63,7 @@ export function createEmailSignIn(options: {
   const controlPlane = (): ControlPlaneClient => {
     if (client) return client;
     const url = resolveCompanionControlPlaneURL({ isPackaged: true, environment: env });
-    if (!url) throw new Error("OMB_CONTROL_PLANE_URL is set but is not an https address");
+    if (!url) throw new Error("AGENTBOT_CONTROL_PLANE_URL is set but is not an https address");
     client = createControlPlaneClient({ baseURL: url, fetchImpl: options.fetchImpl });
     return client;
   };

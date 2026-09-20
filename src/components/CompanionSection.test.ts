@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-import type { CompanionAccountState } from "../types/ogb";
 import {
   companionStateRefreshIsCurrent,
   mutateCompanionBridgeState,
@@ -8,38 +7,12 @@ import {
   type CompanionState,
 } from "./PhoneSetupFlow";
 import {
-  companionAccountActionError,
   companionPairingMode,
   deriveCompanionPanelStatus,
   deriveTailscalePairingStatus,
   loadCompanionBridgeState,
   pairingSurfaceCopy,
-  shouldHydrateCompanionEmail,
 } from "./CompanionSection";
-
-const account = (status: CompanionAccountState["status"], message?: string): CompanionAccountState => ({
-  available: true,
-  status,
-  message,
-});
-
-describe("companion account action errors", () => {
-  it("shows retry and sign-out failures while the account remains signed in", () => {
-    expect(companionAccountActionError(account("ready"), "Sign out could not finish")).toBe(
-      "Sign out could not finish",
-    );
-    expect(companionAccountActionError(account("error"), "Retry could not finish")).toBe(
-      "Retry could not finish",
-    );
-  });
-
-  it("uses account messages only as the signed-out fallback", () => {
-    expect(companionAccountActionError(account("signed-out", "Enter a valid email"), null)).toBe(
-      "Enter a valid email",
-    );
-    expect(companionAccountActionError(account("error", "Secure connection needs attention"), null)).toBeNull();
-  });
-});
 
 describe("companion status refresh", () => {
   it("omits the redundant status pill when device access is ready for its first pairing", () => {
@@ -57,18 +30,15 @@ describe("companion status refresh", () => {
     })).toEqual({ label: "Remote access needs attention", good: false });
   });
 
-  it("keeps account refreshes when the local Companion status fails", async () => {
-    const remoteAccount = account("signed-out", "Email a code");
+  it("returns null when the local Companion status fails", async () => {
     const refreshed = await loadCompanionBridgeState(
       { state: () => Promise.reject(new Error("sidecar unavailable")) },
-      { state: () => Promise.resolve(remoteAccount) },
     );
 
     expect(refreshed.companion).toBeNull();
-    expect(refreshed.account).toBe(remoteAccount);
   });
 
-  it("keeps local Companion refreshes when account status fails", async () => {
+  it("loads the local Companion state", async () => {
     const companion = {
       enabled: true,
       keepAwake: false,
@@ -78,11 +48,9 @@ describe("companion status refresh", () => {
     };
     const refreshed = await loadCompanionBridgeState(
       { state: () => Promise.resolve(companion) },
-      { state: () => Promise.reject(new Error("account unavailable")) },
     );
 
     expect(refreshed.companion).toBe(companion);
-    expect(refreshed.account).toBeNull();
   });
 
   it("does not let a pre-mutation poll overwrite a newly opened pairing", async () => {
@@ -102,10 +70,6 @@ describe("companion status refresh", () => {
     const companionRead = new Promise<void>((resolve) => {
       signalCompanionRead = resolve;
     });
-    let resolveAccount = (_value: CompanionAccountState) => {};
-    const accountRead = new Promise<CompanionAccountState>((resolve) => {
-      resolveAccount = resolve;
-    });
     const epoch = { current: 0 };
     const refreshEpoch = epoch.current;
     let visibleState: CompanionState | null = null;
@@ -116,7 +80,6 @@ describe("companion status refresh", () => {
           return Promise.resolve(staleState);
         },
       },
-      { state: () => accountRead },
     ).then((next) => {
       if (next.companion && companionStateRefreshIsCurrent(epoch, refreshEpoch)) {
         visibleState = next.companion;
@@ -126,19 +89,11 @@ describe("companion status refresh", () => {
 
     await companionRead;
     visibleState = await mutateCompanionBridgeState(epoch, () => Promise.resolve(pairedState));
-    resolveAccount(account("ready"));
     const refreshed = await refresh;
 
     expect(refreshed.companion).toBe(staleState);
     expect(visibleState).toBe(pairedState);
     expect(epoch.current).toBe(2);
-  });
-
-  it("hydrates an untouched email field but preserves user edits", () => {
-    const remoteAccount = { ...account("signed-out"), email: "old@example.com" };
-
-    expect(shouldHydrateCompanionEmail(false, remoteAccount)).toBe(true);
-    expect(shouldHydrateCompanionEmail(true, remoteAccount)).toBe(false);
   });
 });
 
@@ -148,7 +103,7 @@ describe("manual pairing code placement", () => {
   });
 
   it("keeps the code in troubleshooting details when a QR is available", () => {
-    expect(phonePairingManualCodeMode(true, "openmausbot://pair?token=example")).toBe("details");
+    expect(phonePairingManualCodeMode(true, "agentbot://pair?token=example")).toBe("details");
     expect(phonePairingManualCodeMode(false, null)).toBe("hidden");
   });
 });
@@ -162,37 +117,14 @@ describe("companion pairing availability", () => {
     ],
   };
 
-  it("waits while a signed-in account is provisioning its hosted route", () => {
-    expect(companionPairingMode(account("connecting"), localCompanion(true))).toBe(
-      "hosted-connecting",
-    );
-    expect(companionPairingMode(account("connecting"), localCompanion(false))).toBe(
-      "hosted-connecting",
-    );
-  });
-
-  it("starts a ready account when Companion is off, then waits for its hosted route", () => {
-    expect(companionPairingMode(account("ready"), localCompanion(false))).toBe(
-      "hosted-startable",
-    );
-    expect(companionPairingMode(account("ready"), localCompanion(true))).toBe(
-      "hosted-connecting",
-    );
-  });
-
   it("allows pairing as soon as the hosted route is published", () => {
-    expect(companionPairingMode(account("ready"), hostedCompanion)).toBe("hosted-ready");
-    // The companion endpoint is the source of truth even if the separately
-    // polled account state is one render behind.
-    expect(companionPairingMode(account("connecting"), hostedCompanion)).toBe("hosted-ready");
+    expect(companionPairingMode(hostedCompanion)).toBe("hosted-ready");
   });
 
-  it("preserves local-only pairing when hosted access is not configured or failed", () => {
-    expect(companionPairingMode(account("signed-out"), localCompanion(true))).toBe("local-only");
-    expect(
-      companionPairingMode({ available: false, status: "signed-out" }, localCompanion(true)),
-    ).toBe("local-only");
-    expect(companionPairingMode(account("error"), localCompanion(true))).toBe("local-only");
+  it("preserves local-only pairing when hosted access is not configured", () => {
+    expect(companionPairingMode(localCompanion(true))).toBe("local-only");
+    expect(companionPairingMode(localCompanion(false))).toBe("local-only");
+    expect(companionPairingMode(null)).toBe("local-only");
   });
 });
 

@@ -10,7 +10,7 @@ const controllers: AbortController[] = [];
 const schema = { type: "object", properties: { value: { type: "string" } }, required: ["value"], additionalProperties: false };
 
 function fixture(body = "", toolSchema: Record<string, unknown> = schema) {
-  const dir = mkdtempSync(join(tmpdir(), "omb-chat-mcp-"));
+  const dir = mkdtempSync(join(tmpdir(), "agentbot-chat-mcp-"));
   dirs.push(dir);
   const script = join(dir, "fake-mcp.mjs");
   const receipt = join(dir, "receipt.json");

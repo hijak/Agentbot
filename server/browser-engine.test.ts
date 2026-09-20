@@ -51,7 +51,7 @@ function lifecycleChild(args: readonly string[] = [], options: { code?: number; 
 
 describe("deleting one browser session's saved logins", () => {
   function fixture(closeCode = 0) {
-    const home = mkdtempSync(join(tmpdir(), "omb-browser-cleanup-"));
+    const home = mkdtempSync(join(tmpdir(), "agentbot-browser-cleanup-"));
     scratch.push(home);
     const directory = join(home, ".agent-browser", "sessions");
     mkdirSync(join(directory, ".tmp"), { recursive: true });
@@ -83,7 +83,7 @@ describe("deleting one browser session's saved logins", () => {
     expect(env).not.toHaveProperty("AGENT_BROWSER_NO_WEBMCP");
     expect(env).not.toHaveProperty("AGENT_BROWSER_PROFILE");
     expect(env?.AGENT_BROWSER_SOCKET_DIR).toBe("/fixture/sockets");
-    expect(env?.AGENT_BROWSER_CONFIG).toBe(join(home, ".agent-browser", "omb-managed-config.json"));
+    expect(env?.AGENT_BROWSER_CONFIG).toBe(join(home, ".agent-browser", "agentbot-managed-config.json"));
     expect(readFileSync(env!.AGENT_BROWSER_CONFIG!, "utf8")).toBe("{}\n");
   });
 
@@ -159,7 +159,7 @@ describe("deleting one browser session's saved logins", () => {
 
 describe("restoring exactly one browser profile", () => {
   function fixture() {
-    const home = mkdtempSync(join(tmpdir(), "omb-browser-restore-"));
+    const home = mkdtempSync(join(tmpdir(), "agentbot-browser-restore-"));
     scratch.push(home);
     const directory = join(home, ".agent-browser", "sessions");
     mkdirSync(directory, { recursive: true });
@@ -251,7 +251,7 @@ describe("restoring exactly one browser profile", () => {
 
   it("does not overwrite an unexpected managed config or start a browser with it", async () => {
     const { directory, options } = fixture();
-    const path = join(directory, "..", "omb-managed-config.json");
+    const path = join(directory, "..", "agentbot-managed-config.json");
     writeFileSync(path, '{"profile":"/fixture/shared"}');
     await expect(prepareBrowserSessionState("fixture-browser", "work", options)).rejects.toThrow(/configuration was changed/);
     expect(readFileSync(path, "utf8")).toBe('{"profile":"/fixture/shared"}');
@@ -263,12 +263,12 @@ describe("finding the browser engine", () => {
   it("pins the native-verified Windows revision in both download and desktop manifests", () => {
     const asset = resolveAgentBrowserReleaseAsset("win32", "x64")!;
     expect(asset).toEqual({
-      target: "win32-x64", version: "0.36.0-omb.1",
-      asset: "agent-browser-win32-x64-0.36.0-omb.1.exe",
-      url: "https://github.com/milind-soni/OpenMausBot/releases/download/browser-engine-v0.36.0-omb.1/agent-browser-win32-x64-0.36.0-omb.1.exe",
+      target: "win32-x64", version: "0.36.0-agentbot.1",
+      asset: "agent-browser-win32-x64-0.36.0-agentbot.1.exe",
+      url: "https://github.com/milind-soni/Agentbot/releases/download/browser-engine-v0.36.0-agentbot.1/agent-browser-win32-x64-0.36.0-agentbot.1.exe",
       bytes: 13806080, sha256: "33bee834f6a6072ec8688b0914726e0262874d758f69f27e8baf7eaac6b5ed15",
     });
-    expect(agentBrowserReleaseVersion(asset)).toBe("0.36.0-omb.1");
+    expect(agentBrowserReleaseVersion(asset)).toBe("0.36.0-agentbot.1");
     expect(browserBundleSpec("win32-x64").engine).toEqual({
       version: asset.version, asset: asset.asset, url: asset.url,
       bytes: asset.bytes, sha256: asset.sha256, executable: "agent-browser.exe",
@@ -279,30 +279,30 @@ describe("finding the browser engine", () => {
   });
 
   it("does not reuse a pre-fix Windows managed install for a revised release", () => {
-    const dataDir = join(tmpdir(), "omb-versioned-browser-fixture");
+    const dataDir = join(tmpdir(), "agentbot-versioned-browser-fixture");
     const old = join(dataDir, "tools", "agent-browser", "0.36.0", "agent-browser.exe");
     const revised = pinnedBinaryPath(dataDir, "win32", "x64");
-    expect(revised).toBe(join(dataDir, "tools", "agent-browser", "0.36.0-omb.1", "agent-browser.exe"));
+    expect(revised).toBe(join(dataDir, "tools", "agent-browser", "0.36.0-agentbot.1", "agent-browser.exe"));
     const files = new Set([old]);
     const options = { dataDir, platform: "win32" as const, arch: "x64", env: { PATH: "" }, exists: (file: string) => files.has(file) };
     expect(resolveAgentBrowserBinary(options)).toBeNull();
     files.add(revised);
-    expect(browserEngineStatus(options)).toMatchObject({ kind: "ready", binaryPath: revised, version: "0.36.0-omb.1" });
-    expect(resolveAgentBrowserBinary({ ...options, env: { PATH: "", OMB_AGENT_BROWSER_PATH: old } })).toBe(old);
+    expect(browserEngineStatus(options)).toMatchObject({ kind: "ready", binaryPath: revised, version: "0.36.0-agentbot.1" });
+    expect(resolveAgentBrowserBinary({ ...options, env: { PATH: "", AGENTBOT_AGENT_BROWSER_PATH: old } })).toBe(old);
   });
 
   it("retains default upstream versions and permits a pinned platform-specific asset URL", () => {
     const official = resolveAgentBrowserReleaseAsset("linux", "x64")!;
     expect(agentBrowserReleaseVersion(official)).toBe(AGENT_BROWSER_VERSION);
-    const revised = { ...official, version: "0.36.0-omb.1", url: "https://example.invalid/releases/download/fixed/fixture.exe" };
-    expect(agentBrowserReleaseVersion(revised)).toBe("0.36.0-omb.1");
+    const revised = { ...official, version: "0.36.0-agentbot.1", url: "https://example.invalid/releases/download/fixed/fixture.exe" };
+    expect(agentBrowserReleaseVersion(revised)).toBe("0.36.0-agentbot.1");
     expect(agentBrowserReleaseUrl(revised)).toBe(revised.url);
   });
 
   it.each(SUPPORTED_BROWSER_TARGETS)("uses the complete %s desktop bundle before old downloaded engines", (target) => {
     const [platform, arch] = target.split("-");
-    const env = { OMB_RESOURCES_PATH: join(tmpdir(), "OMB resources"), PATH: "" };
-    const bundle = browserBundlePaths(join(env.OMB_RESOURCES_PATH, "browser-engine"), target);
+    const env = { AGENTBOT_RESOURCES_PATH: join(tmpdir(), "OMB resources"), PATH: "" };
+    const bundle = browserBundlePaths(join(env.AGENTBOT_RESOURCES_PATH, "browser-engine"), target);
     const files = new Set([bundle.directory, bundle.engine, bundle.chrome, bundle.manifest, bundle.licenses]);
     const options = { env, platform: platform as NodeJS.Platform, arch, exists: (p: string) => files.has(p) };
     expect(resolveAgentBrowserBinary(options)).toBe(bundle.engine);
@@ -319,14 +319,14 @@ describe("finding the browser engine", () => {
     // A deliberately configured external runtime remains an explicit override.
     const external = join(tmpdir(), "external-engine");
     files.add(external);
-    expect(resolveAgentBrowserBinary({ ...options, env: { ...env, OMB_AGENT_BROWSER_PATH: external } })).toBe(external);
+    expect(resolveAgentBrowserBinary({ ...options, env: { ...env, AGENTBOT_AGENT_BROWSER_PATH: external } })).toBe(external);
   });
 
   it("mounts the bundled browser with no download and keeps explicit Chrome overrides", async () => {
-    const resources = mkdtempSync(join(tmpdir(), "omb-browser-resources-"));
+    const resources = mkdtempSync(join(tmpdir(), "agentbot-browser-resources-"));
     scratch.push(resources);
     const host = { platform: "linux" as const, arch: "x64" };
-    const env = { OMB_RESOURCES_PATH: resources, PATH: "" };
+    const env = { AGENTBOT_RESOURCES_PATH: resources, PATH: "" };
     const bundle = browserBundlePaths(join(resources, "browser-engine"), "linux-x64");
     mkdirSync(bundle.licenses, { recursive: true });
     for (const file of [bundle.engine, bundle.chrome, bundle.manifest]) {
@@ -338,7 +338,7 @@ describe("finding the browser engine", () => {
     expect(spec.env.AGENT_BROWSER_EXECUTABLE_PATH).toBe(bundle.chrome);
     expect(spec.env.AGENT_BROWSER_SESSION).toBe("isolated");
     expect(spec.env.AGENT_BROWSER_NO_WEBMCP).toBe("1");
-    expect(spec.env).not.toHaveProperty("OMB_RESOURCES_PATH");
+    expect(spec.env).not.toHaveProperty("AGENTBOT_RESOURCES_PATH");
     const override = agentBrowserIntegration({ binaryPath: bundle.engine, session: "isolated", encryptionKey: "key", env: { ...env, AGENT_BROWSER_EXECUTABLE_PATH: "/explicit/chrome" }, ...host });
     expect(override.env.AGENT_BROWSER_EXECUTABLE_PATH).toBe("/explicit/chrome");
     // A spawn would fail because the fixture engine is not executable.
@@ -346,7 +346,7 @@ describe("finding the browser engine", () => {
   });
 
   it("prefers the explicit path, then the pinned download, then PATH, and reports why when nothing is there", () => {
-    const dataDir = mkdtempSync(join(tmpdir(), "omb-engine-"));
+    const dataDir = mkdtempSync(join(tmpdir(), "agentbot-engine-"));
     scratch.push(dataDir);
     const pinned = pinnedBinaryPath(dataDir);
     const name = process.platform === "win32" ? "agent-browser.exe" : "agent-browser";
@@ -365,9 +365,9 @@ describe("finding the browser engine", () => {
     files.add(pinned);
     expect(resolveAgentBrowserBinary({ dataDir, env, exists })).toBe(pinned);
     files.add(override);
-    expect(resolveAgentBrowserBinary({ dataDir, env: { ...env, OMB_AGENT_BROWSER_PATH: override }, exists })).toBe(override);
+    expect(resolveAgentBrowserBinary({ dataDir, env: { ...env, AGENTBOT_AGENT_BROWSER_PATH: override }, exists })).toBe(override);
     // an override that does not exist is an error, not a silent fallback
-    expect(resolveAgentBrowserBinary({ dataDir, env: { ...env, OMB_AGENT_BROWSER_PATH: join(dataDir, "missing", name) }, exists })).toBeNull();
+    expect(resolveAgentBrowserBinary({ dataDir, env: { ...env, AGENTBOT_AGENT_BROWSER_PATH: join(dataDir, "missing", name) }, exists })).toBeNull();
     expect(browserEngineStatus({ dataDir, env, exists })).toMatchObject({ kind: "ready", binaryPath: pinned, version: agentBrowserReleaseVersion(resolveAgentBrowserReleaseAsset()) });
   });
 
@@ -389,7 +389,7 @@ describe("finding the browser engine", () => {
 
 describe("installing the browser engine", () => {
   it("downloads the pinned asset, verifies size and digest, and only then names the file", async () => {
-    const dataDir = mkdtempSync(join(tmpdir(), "omb-engine-install-"));
+    const dataDir = mkdtempSync(join(tmpdir(), "agentbot-engine-install-"));
     scratch.push(dataDir);
     const body = Buffer.from("#!/bin/sh\necho agent-browser\n");
     const asset = { target: "linux-x64", asset: "agent-browser-linux-x64", sha256: createHash("sha256").update(body).digest("hex"), bytes: body.length };
@@ -410,7 +410,7 @@ describe("installing the browser engine", () => {
   });
 
   it("refuses a download whose bytes do not match the pin, and leaves nothing behind", async () => {
-    const dataDir = mkdtempSync(join(tmpdir(), "omb-engine-bad-"));
+    const dataDir = mkdtempSync(join(tmpdir(), "agentbot-engine-bad-"));
     scratch.push(dataDir);
     const asset = { target: "linux-x64", asset: "agent-browser-linux-x64", sha256: "a".repeat(64), bytes: 5 };
     await expect(installAgentBrowserBinary({ dataDir, platform: "linux", asset, fetchImpl: async () => new Response(Buffer.from("hello")) })).rejects.toThrow(/SHA-256/u);
@@ -435,7 +435,7 @@ describe("what a bot gets", () => {
     expect(spec.env).toEqual({
       AGENT_BROWSER_SESSION: "bot-1", AGENT_BROWSER_NO_WEBMCP: "1", AGENT_BROWSER_RESTORE: browserRestoreKey("bot-1"),
       AGENT_BROWSER_RESTORE_SAVE: "auto", AGENT_BROWSER_ENCRYPTION_KEY: "session-key",
-      AGENT_BROWSER_CONFIG: expect.stringContaining("omb-managed-config.json"),
+      AGENT_BROWSER_CONFIG: expect.stringContaining("agentbot-managed-config.json"),
       AGENT_BROWSER_HEADLESS: "1", PATH: "/usr/bin",
       AGENT_BROWSER_EXECUTABLE_PATH: "/opt/trusted chrome/chrome",
     });
@@ -449,7 +449,7 @@ describe("what a bot gets", () => {
     expect(spec.env).toEqual({
       AGENT_BROWSER_SESSION: "bot-1", AGENT_BROWSER_NO_WEBMCP: "1", AGENT_BROWSER_RESTORE: browserRestoreKey("bot-1"),
       AGENT_BROWSER_RESTORE_SAVE: "auto", AGENT_BROWSER_ENCRYPTION_KEY: "session-key",
-      AGENT_BROWSER_CONFIG: expect.stringContaining("omb-managed-config.json"),
+      AGENT_BROWSER_CONFIG: expect.stringContaining("agentbot-managed-config.json"),
       AGENT_BROWSER_HEADLESS: "1", PATH: "/usr/bin",
       AGENT_BROWSER_EXECUTABLE_PATH: "/opt/process-chrome/chrome",
     });
@@ -486,7 +486,7 @@ describe("what a bot gets", () => {
   });
 
   it("makes one encryption key per data dir, private, and reuses it", () => {
-    const dataDir = mkdtempSync(join(tmpdir(), "omb-engine-key-"));
+    const dataDir = mkdtempSync(join(tmpdir(), "agentbot-engine-key-"));
     scratch.push(dataDir);
     const key = browserEngineEncryptionKey(dataDir);
     expect(key).toMatch(/^[0-9a-f]{64}$/u);

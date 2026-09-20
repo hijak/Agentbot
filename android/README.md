@@ -1,11 +1,11 @@
-# OpenMausBot Android companion
+# Agentbot Android companion
 
 The Android counterpart to the iOS companion app: pair a phone with a computer
-running OpenMausBot, then read and answer from the phone.
+running Agentbot, then read and answer from the phone.
 
-- `applicationId` — `com.openmausbot.companion`
+- `applicationId` — `com.agentbot.companion`
 - `minSdk` 26 (Android 8.0), `targetSdk` / `compileSdk` 37
-- Deep-link scheme — `openmausbot`
+- Deep-link scheme — `agentbot`
 - Two modules: `:core` (protocol, ported from `ios/Sources/CompanionCore`) and
   `:app` (Compose UI, Android platform)
 
@@ -35,13 +35,13 @@ cd android
 ```
 
 Install `app/build/outputs/apk/preview/app-preview.apk`. Its launcher name is
-**OpenMausBot Preview**, its application ID is `com.openmausbot.companion.preview`,
+**Agentbot Preview**, its application ID is `com.agentbot.companion.preview`,
 and its version ends in `-threads-preview`. Gradle signs it with the local debug
 key, so no release signing material is needed. It installs beside the released
 app with separate pairing, preferences and messages; it does not update that app.
 
 Open Preview and pair using its QR scanner or manual address form. Preview does
-not register the release's `openmausbot://` pairing links or system share targets.
+not register the release's `agentbot://` pairing links or system share targets.
 Its file-sharing provider uses the preview application ID too.
 
 Pull-request CI runs the core and debug UI unit tests, builds both APK variants,
@@ -85,8 +85,8 @@ The signing key belongs to the maintainer and never enters this repository.
 Create a key once, outside any clone of this repository:
 
 ```sh
-keytool -genkeypair -v -keystore ~/openmausbot-release.jks \
-  -storetype PKCS12 -alias openmausbot -keyalg RSA -keysize 4096 -validity 10000
+keytool -genkeypair -v -keystore ~/agentbot-release.jks \
+  -storetype PKCS12 -alias agentbot -keyalg RSA -keysize 4096 -validity 10000
 ```
 
 Then, for each release:
@@ -95,7 +95,7 @@ Then, for each release:
 # whichever build-tools version is installed; any recent one works
 APKSIGNER="$(ls -d "$ANDROID_HOME"/build-tools/* | tail -1)/apksigner"
 
-"$APKSIGNER" sign --ks ~/openmausbot-release.jks --ks-key-alias openmausbot \
+"$APKSIGNER" sign --ks ~/agentbot-release.jks --ks-key-alias agentbot \
   --out app-release.apk app-release-unsigned.apk
 
 "$APKSIGNER" verify --verbose --print-certs app-release.apk
@@ -117,9 +117,9 @@ silently inherit a stale `keystore.properties` from a cached workspace.
 `android/keystore.properties` (gitignored):
 
 ```properties
-storeFile=/absolute/path/to/openmausbot-release.jks
+storeFile=/absolute/path/to/agentbot-release.jks
 storePassword=…
-keyAlias=openmausbot
+keyAlias=agentbot
 keyPassword=…
 ```
 

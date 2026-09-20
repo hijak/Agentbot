@@ -1,4 +1,4 @@
-// The `openmausbot service` command, kept separate from cli.ts so it can be
+// The `agentbot service` command, kept separate from cli.ts so it can be
 // tested with explicit inputs: it renders the unit for this platform, writes
 // it next to the data, and prints the commands that install it.
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -11,7 +11,6 @@ export interface ServiceInstallInput {
   dataDir: string;
   port: number;
   domain?: string;
-  tunnel?: boolean;
   tailscale?: boolean;
   label?: string;
   /** This CLI's own entry, as node saw it (process.argv[1]) and node itself (process.execPath). */
@@ -28,10 +27,9 @@ export interface ServiceIo {
 }
 
 /** The `serve` arguments the service repeats, from the options given to `service install`. */
-export function serviceServeArgs(input: Pick<ServiceInstallInput, "port" | "dataDir" | "domain" | "tunnel" | "tailscale" | "label">): string[] {
+export function serviceServeArgs(input: Pick<ServiceInstallInput, "port" | "dataDir" | "domain" | "tailscale" | "label">): string[] {
   const args = ["--port", String(input.port), "--data-dir", input.dataDir, "--no-pair"];
   if (input.domain) args.push("--domain", input.domain);
-  else if (input.tunnel) args.push("--tunnel");
   else if (input.tailscale) args.push("--tailscale");
   if (input.label) args.push("--label", input.label);
   return args;
@@ -42,7 +40,7 @@ export function runServiceCommand(input: ServiceInstallInput, io: ServiceIo): nu
   const home = input.home ?? homedir();
   const plan = servicePlan(platform, input.dataDir, home);
   if (!plan) {
-    io.error("services are written for Linux (systemd) and macOS (launchd); on Windows, use Task Scheduler to run `openmausbot serve` at startup");
+    io.error("services are written for Linux (systemd) and macOS (launchd); on Windows, use Task Scheduler to run `agentbot serve` at startup");
     return 1;
   }
   if (input.action === "uninstall") {
@@ -74,7 +72,7 @@ export function runServiceCommand(input: ServiceInstallInput, io: ServiceIo): nu
   for (const line of plan.activate) io.log(`  ${line}`);
   io.log("");
   if (input.domain && platform === "linux") io.log("the unit grants Caddy the capability for ports 80 and 443, so no setcap is needed under the service");
-  io.log(`logs: ${platform === "darwin" ? `${input.dataDir}/logs/service.log` : "journalctl -u openmausbot -f"}`);
-  io.log(`change options later by running \`openmausbot service install\` again with the new ones, then: ${platform === "darwin" ? plan.activate[1] : "sudo systemctl daemon-reload && sudo systemctl restart openmausbot"}`);
+  io.log(`logs: ${platform === "darwin" ? `${input.dataDir}/logs/service.log` : "journalctl -u agentbot -f"}`);
+  io.log(`change options later by running \`agentbot service install\` again with the new ones, then: ${platform === "darwin" ? plan.activate[1] : "sudo systemctl daemon-reload && sudo systemctl restart agentbot"}`);
   return 0;
 }

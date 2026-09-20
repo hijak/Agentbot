@@ -85,7 +85,7 @@ if let finishFile {
 /// SFSpeechRecognizer can keep revising/re-emitting a partial transcript
 /// after the user stops talking. Only a changed transcript resets the timer.
 final class SilenceEndpointer {
-  private let queue = DispatchQueue(label: "com.openmausbot.speech.endpoint")
+  private let queue = DispatchQueue(label: "com.agentbot.speech.endpoint")
   private let gap: TimeInterval
   private let finish: () -> Void
   private var timer: DispatchSourceTimer?
@@ -177,14 +177,26 @@ SFSpeechRecognizer.requestAuthorization { status in
     try engine.start()
   } catch { fail("mic-failed") }
 
+  var lastSpokenText = ""
   recognizer.recognitionTask(with: request) { result, error in
     if let result = result {
-      let text = result.bestTranscription.formattedString
+      var text = result.bestTranscription.formattedString
+      if text.isEmpty && !lastSpokenText.isEmpty {
+        text = lastSpokenText
+      } else if !text.isEmpty {
+        lastSpokenText = text
+      }
       endpointer?.saw(text)
       emit(["partial": !result.isFinal, "text": text])
       if result.isFinal { exit(0) }
     }
-    if error != nil { fail("recognition-error") }
+    if error != nil {
+      if !lastSpokenText.isEmpty {
+        emit(["partial": false, "text": lastSpokenText])
+        exit(0)
+      }
+      fail("recognition-error")
+    }
   }
 }
 

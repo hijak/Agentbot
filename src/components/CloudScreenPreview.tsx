@@ -4,14 +4,13 @@ import { Loader2, Maximize2, Monitor } from "lucide-react";
 import { t } from "@/lib/i18n";
 
 /** A connection is only visible once the browser has decoded its first frame. */
-export function CloudScreenPreview({ src, name, error, starting, opening, disabled, refreshing = false, retry = 0, onOpen, onRetry }: {
+export function CloudScreenPreview({ src, name, error, starting, opening, disabled, retry = 0, onOpen, onRetry }: {
   src: string | null;
   name: string;
   error: string | null;
   starting: boolean;
   opening: boolean;
   disabled: boolean;
-  refreshing?: boolean;
   retry?: number;
   onOpen: () => void;
   onRetry: (discardFrame: boolean) => void;
@@ -23,7 +22,7 @@ export function CloudScreenPreview({ src, name, error, starting, opening, disabl
   const problem = error ?? (src && failed === src ? t("computer.preview.imageFailed") : null);
 
   return (
-    <div className="relative h-full w-full" aria-busy={!problem && (!visible || opening || refreshing)}>
+    <div className="relative h-full w-full" aria-busy={!problem && (!visible || opening)}>
       {src && (
         <button
           type="button"
@@ -53,12 +52,6 @@ export function CloudScreenPreview({ src, name, error, starting, opening, disabl
         <div role="status" className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-6 text-center text-[12px] text-ink-secondary">
           <Loader2 size={18} className="animate-spin" />
           {starting ? t("computer.phase.starting") : t("computer.preview.connectingScreen")}
-        </div>
-      )}
-      {visible && refreshing && !problem && (
-        <div role="status" className="absolute bottom-2 left-2 flex items-center gap-1 rounded-md bg-black/70 px-2 py-1 text-[11px] text-white">
-          <Loader2 size={12} className="animate-spin" />
-          {t("computer.preview.connectingScreen")}
         </div>
       )}
       {problem && (

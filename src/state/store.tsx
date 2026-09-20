@@ -499,7 +499,7 @@ export interface ConfigStatus {
     configured: boolean;
     ready: boolean;
     voice: string;
-    provider?: "elevenlabs" | "fish" | "system" | "chatterbox";
+    provider?: "elevenlabs" | "fish" | "system" | "chatterbox" | "jax-js";
     baseUrl?: string;
     model?: string;
   };
@@ -881,6 +881,9 @@ export type Action =
       replyToId?: string;
       threadId?: string;
       mode?: "chat" | "goal";
+      /** After a busy send lands in the queue, fold it in (steer) or stop
+       * the turn so it runs next (interrupt). */
+      afterQueue?: "steer" | "interrupt";
       onError?: () => void;
     }
   | {
@@ -904,6 +907,11 @@ export type Action =
       sendId?: string;
       replyToId?: string;
       threadId?: string;
+      /** Skip live steer and hold the words for the next turn. */
+      preferQueue?: boolean;
+      /** After a busy send lands in the queue, fold it in (steer) or stop
+       * the turn so it runs next (interrupt). */
+      afterQueue?: "steer" | "interrupt";
       onError?: () => void;
     }
   | { type: "pendingQueued"; threadId: string; queueId: string; text: string; reason?: "capacity" }
@@ -2656,7 +2664,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           void waitForExecutionSettings(botBeforeSend ? [botBeforeSend] : [], threadId)
             .then(() => api(`/api/bots/${action.botId}/messages`, {
                 method: "POST",
-                body: JSON.stringify({ text: action.text, replyToId: action.replyToId, threadId, sendId }),
+                body: JSON.stringify({
+                  text: action.text,
+                  replyToId: action.replyToId,
+                  threadId,
+                  sendId,
+                  ...(action.preferQueue ? { preferQueue: true } : {}),
+                }),
               }))
             .then((body) => {
               if (body?.message && typeof body.threadId === "string") {
@@ -2679,6 +2693,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                   text: action.text,
                   reason: body.reason === "capacity" ? "capacity" : undefined,
                 });
+                if (action.afterQueue === "steer") {
+                  wrapped({
+                    type: "steerQueued",
+                    botId: action.botId,
+                    threadId: body.threadId,
+                    queueId: body.queueId,
+                  });
+                } else if (action.afterQueue === "interrupt") {
+                  wrapped({ type: "interrupt", botId: action.botId, threadId: body.threadId });
+                }
               }
             })
             .catch((error) => {
@@ -2935,6 +2959,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                   queueId: body.queueId,
                   text: action.text,
                 });
+                if (action.afterQueue === "steer") {
+                  wrapped({
+                    type: "steerGroupQueued",
+                    groupId: action.groupId,
+                    threadId: body.threadId,
+                    queueId: body.queueId,
+                  });
+                } else if (action.afterQueue === "interrupt") {
+                  wrapped({ type: "interruptGroup", groupId: action.groupId, threadId: body.threadId });
+                }
               }
             })
             .catch((error) => {

@@ -54,9 +54,9 @@ async function restart(env: NodeJS.ProcessEnv = {}) {
 }
 
 beforeAll(async () => {
-  home = mkdtempSync(join(tmpdir(), "omb-hosted-server-"));
+  home = mkdtempSync(join(tmpdir(), "agentbot-hosted-server-"));
   stateFile = join(home, "portal-fixture.json"); state();
-  const data = join(home, ".openmausbot");
+  const data = join(home, ".agentbot");
   const layer = join(home, "enterprise");
   mkdirSync(join(layer, "server"), { recursive: true });
   mkdirSync(join(home, "static"));
@@ -86,10 +86,10 @@ beforeAll(async () => {
   child = spawn(process.execPath, [join(ROOT, "server/index.ts")], { cwd: ROOT, env: fixtureEnv = {
     ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
     ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
-    HOME: home, USERPROFILE: home, OMB_PORT: String(PORT), OMB_WEBHOOK_PORT: String(PORT + 1),
-    OMB_STATIC_DIR: join(home, "static"), OMB_BROWSER_CONNECTION: join(home, "browser-connection.json"),
-    OMB_ENTERPRISE_DIR: layer, OMB_LICENSE_KEY: "fixture-only", OMB_ADMIN_URL: "https://admin.example.test",
-    OMB_ADMIN_WORKSPACE: "acme", OMB_PUBLIC_URL: `https://${HOST}`,
+    HOME: home, USERPROFILE: home, AGENTBOT_PORT: String(PORT), AGENTBOT_WEBHOOK_PORT: String(PORT + 1),
+    AGENTBOT_STATIC_DIR: join(home, "static"), AGENTBOT_BROWSER_CONNECTION: join(home, "browser-connection.json"),
+    AGENTBOT_ENTERPRISE_DIR: layer, AGENTBOT_LICENSE_KEY: "fixture-only", AGENTBOT_ADMIN_URL: "https://admin.example.test",
+    AGENTBOT_ADMIN_WORKSPACE: "acme", AGENTBOT_PUBLIC_URL: `https://${HOST}`,
   }, stdio: ["ignore", "pipe", "pipe"] });
   child.stdout?.on("data", (chunk) => log += chunk); child.stderr?.on("data", (chunk) => log += chunk);
   const deadline = Date.now() + 20_000;
@@ -107,7 +107,7 @@ describe("hosted bridge in the full server", () => {
     expect((await call("/")).location).toBe("/api/auth/hosted/start");
     expect((await call("/pair")).location).toBe("/api/auth/hosted/start");
     expect((await call("/", { local: true })).body).toContain("Fixture workspace");
-    expect((await call("/.well-known/openmausbot/environment")).body.capabilities.emailSignIn).toBe(false);
+    expect((await call("/.well-known/agentbot/environment")).body.capabilities.emailSignIn).toBe(false);
     for (const path of ["/api/auth/pair", "/api/auth/pairing", "/api/auth/email/start", "/api/auth/email/verify"]) {
       expect((await call(path, { method: "POST" })).status).toBe(403);
     }
@@ -145,7 +145,7 @@ describe("hosted bridge in the full server", () => {
     expect((await call("/api/auth/session", { cookie })).status).toBe(401);
   }, 17_000);
   it("fails closed if a configured deployment loses its enterprise hook, with local owner access retained", async () => {
-    await restart({ OMB_ENTERPRISE_DIR: join(home, "absent-layer"), OMB_ADMIN_MEMBERSHIP: "portal" });
+    await restart({ AGENTBOT_ENTERPRISE_DIR: join(home, "absent-layer"), AGENTBOT_ADMIN_MEMBERSHIP: "portal" });
     expect((await call("/api/health/hosted")).status).toBe(503);
     expect((await call("/api/auth/hosted/start")).status).toBe(503);
     expect((await call("/")).status).toBe(503);
@@ -157,15 +157,15 @@ describe("hosted bridge in the full server", () => {
   it("uses explicit portal membership without local allow-list synchronization and still revokes quiet streams", async () => {
     await waitForExit(child, { signal: "SIGTERM" });
     state();
-    writeFileSync(join(home, ".openmausbot", "config.json"), JSON.stringify({ signIn: { admins: [], members: [] }, instances: { fixture: { driver: "hosted-access-test-shadow" } } }));
-    child = spawn(process.execPath, [join(ROOT, "server/index.ts")], { cwd: ROOT, env: { ...fixtureEnv, OMB_ADMIN_MEMBERSHIP: "portal" }, stdio: ["ignore", "pipe", "pipe"] });
+    writeFileSync(join(home, ".agentbot", "config.json"), JSON.stringify({ signIn: { admins: [], members: [] }, instances: { fixture: { driver: "hosted-access-test-shadow" } } }));
+    child = spawn(process.execPath, [join(ROOT, "server/index.ts")], { cwd: ROOT, env: { ...fixtureEnv, AGENTBOT_ADMIN_MEMBERSHIP: "portal" }, stdio: ["ignore", "pipe", "pipe"] });
     child.stderr?.on("data", (chunk) => log += chunk);
     await expect.poll(async () => {
       try { return (await call("/api/health", { local: true })).status; } catch { return 0; }
     }, { timeout: 20_000 }).toBe(200);
     const readiness = await call("/api/health/hosted");
     expect(readiness.status).toBe(200);
-    expect(readiness.body).toEqual({ ok: true, service: "openmausbot", membershipAuthority: "portal", workspace: "acme", ...HOSTED_CONTRACT_METADATA });
+    expect(readiness.body).toEqual({ ok: true, service: "agentbot", membershipAuthority: "portal", workspace: "acme", ...HOSTED_CONTRACT_METADATA });
     expect(readiness.contractVersion).toBe("1");
     expect(readiness.cookies).toEqual([]);
     const cookie = await login();
@@ -188,11 +188,11 @@ describe("hosted bridge in the full server", () => {
     expect((await call("/api/auth/session", { cookie: memberCookie })).status).toBe(401);
   }, 30_000);
   it.each([
-    ["standalone", { OMB_ADMIN_URL: undefined, OMB_ADMIN_WORKSPACE: undefined, OMB_ADMIN_MEMBERSHIP: undefined }],
-    ["incomplete hosted configuration", { OMB_ADMIN_URL: undefined, OMB_ADMIN_MEMBERSHIP: "portal" }],
-    ["invalid workspace", { OMB_ADMIN_WORKSPACE: "../private", OMB_ADMIN_MEMBERSHIP: "portal" }],
-    ["invalid membership mode", { OMB_ADMIN_MEMBERSHIP: "invalid" }],
-    ["local membership mode", { OMB_ADMIN_MEMBERSHIP: "local" }],
+    ["standalone", { AGENTBOT_ADMIN_URL: undefined, AGENTBOT_ADMIN_WORKSPACE: undefined, AGENTBOT_ADMIN_MEMBERSHIP: undefined }],
+    ["incomplete hosted configuration", { AGENTBOT_ADMIN_URL: undefined, AGENTBOT_ADMIN_MEMBERSHIP: "portal" }],
+    ["invalid workspace", { AGENTBOT_ADMIN_WORKSPACE: "../private", AGENTBOT_ADMIN_MEMBERSHIP: "portal" }],
+    ["invalid membership mode", { AGENTBOT_ADMIN_MEMBERSHIP: "invalid" }],
+    ["local membership mode", { AGENTBOT_ADMIN_MEMBERSHIP: "local" }],
   ] satisfies [string, NodeJS.ProcessEnv][])("does not attest portal readiness for %s", async (_name, env) => {
     state();
     await restart(env);
@@ -204,13 +204,13 @@ describe("hosted bridge in the full server", () => {
   }, 25_000);
   it.each([{ invalid: true }, { features: [] }])("does not attest portal readiness without valid admin entitlement (%j)", async (license) => {
     state("admin", false, license);
-    await restart({ OMB_ADMIN_MEMBERSHIP: "portal" });
+    await restart({ AGENTBOT_ADMIN_MEMBERSHIP: "portal" });
     expect((await call("/api/health/hosted")).status).toBe(503);
     expect((await call("/api/health")).status).toBe(200);
   }, 25_000);
   it("withdraws hosted readiness immediately when the running server's entitlement expires", async () => {
     state("admin", false, { expiresAt: new Date(Date.now() + 8_000).toISOString() });
-    await restart({ OMB_ADMIN_MEMBERSHIP: "portal" });
+    await restart({ AGENTBOT_ADMIN_MEMBERSHIP: "portal" });
     expect((await call("/api/health/hosted")).status).toBe(200);
     await expect.poll(async () => (await call("/api/health/hosted")).status, { timeout: 10_000, interval: 100 }).toBe(503);
     expect((await call("/api/health")).status).toBe(200);

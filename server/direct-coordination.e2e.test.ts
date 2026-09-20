@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import { launchVerificationServer, runControlOmb } from "../scripts/control-omb.ts";
+import { launchVerificationServer, runControlOmb } from "../scripts/control-agentbot.ts";
 import { request } from "../scripts/mcp-server.ts";
 import { removeTempDir } from "./testing/cleanup.ts";
 
@@ -145,7 +145,7 @@ it("does not treat self-opened work or an abandoned human branch as new human au
 }), 45_000);
 
 it("returns a nested coordinated result after Claude retries a transient provider exit", async () => {
-  const scratch = mkdtempSync(join(tmpdir(), "omb-coordination-retry-"));
+  const scratch = mkdtempSync(join(tmpdir(), "agentbot-coordination-retry-"));
   try {
     await fixture(async f => {
       await f.start();

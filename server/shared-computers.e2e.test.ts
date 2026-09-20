@@ -6,7 +6,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, realpathSync } from
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
-import { launchVerificationServer, type VerificationServer } from "../scripts/control-omb.ts";
+import { launchVerificationServer, type VerificationServer } from "../scripts/control-agentbot.ts";
 import { createComputerSharing, type SharedFolder } from "../electron/computer-sharing.mjs";
 import { sessionCookieName } from "./request-auth.ts";
 
@@ -78,7 +78,7 @@ beforeAll(async () => {
   const dump = join(fixture.info.dataDir, "fake-claude-dump.json");
   await vi.waitFor(() => expect(existsSync(dump)).toBe(true), { timeout: 15_000 });
   const agents = JSON.parse(readFileSync(dump, "utf8")).mcpConfig.mcpServers.agents;
-  expect(agents.env.OMB_COMMS_TOKEN).toBeTruthy();
+  expect(agents.env.AGENTBOT_COMMS_TOKEN).toBeTruthy();
   proxy = spawn(agents.command, agents.args, {
     env: { PATH: process.env.PATH, HOME: fixture.info.dataDir, ...agents.env }, stdio: ["pipe", "pipe", "pipe"],
   });
@@ -175,7 +175,7 @@ it("disabling the local gate cancels a live job even while the remote workspace 
   await expect.poll(() => connector.state(env.id).connected, { timeout: 5000 }).toBe(false);
   expect((await pending).isError).toBe(true);
   await expect.poll(() => commandAlive(marker), { timeout: 5000 }).toBe(false);
-  expect((await api("GET", "/.well-known/openmausbot/environment")).body.capabilities.sharedComputers).toBe(true);
+  expect((await api("GET", "/.well-known/agentbot/environment")).body.capabilities.sharedComputers).toBe(true);
   await expect(connector.identity(env)).rejects.toThrow("turned off on this computer");
   expect((await operation("read_file", { path: "brief.txt" })).isError).toBe(true);
   evidence.push("local flag withdrawal cancels a live remote command and prevents further access despite remote opt-in");
@@ -200,6 +200,6 @@ it("withdrawing the workspace flag closes pending jobs and refuses a previously 
   const staleTool = await tool("list_shared_computers");
   expect(staleTool.isError).toBe(true);
   expect(staleTool.content[0].text).toContain("unknown internal endpoint");
-  expect((await api("GET", "/.well-known/openmausbot/environment")).body.capabilities).not.toHaveProperty("sharedComputers");
+  expect((await api("GET", "/.well-known/agentbot/environment")).body.capabilities).not.toHaveProperty("sharedComputers");
   evidence.push("workspace flag withdrawal closes in-flight requests and refuses tools advertised to an earlier provider turn");
 }, 45_000);

@@ -71,7 +71,7 @@ vi.mock("node:child_process", async (original) => {
 let cua;
 let localOriginModule;
 beforeEach(async () => {
-  fixture.home = mkdtempSync(join(tmpdir(), "omb-cua-async-"));
+  fixture.home = mkdtempSync(join(tmpdir(), "agentbot-cua-async-"));
   fixture.script = "setTimeout(() => process.exit(0), 120)";
   fixture.socketReady = false;
   fixture.children = [];

@@ -147,7 +147,7 @@ export function createBotPackageExport(input: {
     }];
   });
 
-  const id = portableKey(input.name, "openmaus-package", new Set());
+  const id = portableKey(input.name, "agentbot-package", new Set());
   const agents: BotPackageDefinition["agents"] = bots.map((bot) => {
     const appearance: BotPackageDefinition["agents"][number]["appearance"] = { color: bot.color };
     if (bot.mascotExpression) appearance.mascotExpression = bot.mascotExpression;
@@ -170,10 +170,10 @@ export function createBotPackageExport(input: {
     id,
     release: "1.0.0",
     name: input.name,
-    tagline: `A portable OpenMausBot setup with ${bots.length} ${bots.length === 1 ? "bot" : "bots"}.`,
-    summary: "Exported from OpenMausBot. Review the roles, rooms, playbooks, connector requirements, and paused routines before sharing or publishing.",
+    tagline: `A portable Agentbot setup with ${bots.length} ${bots.length === 1 ? "bot" : "bots"}.`,
+    summary: "Exported from Agentbot. Review the roles, rooms, playbooks, connector requirements, and paused routines before sharing or publishing.",
     category: "Community",
-    author: { name: input.authorName?.trim() || "OpenMausBot user" },
+    author: { name: input.authorName?.trim() || "Agentbot user" },
     license: "Unspecified",
     outcomes: ["Recreate this bot setup without copying private runtime state."],
     setupMinutes: Math.min(240, Math.max(2, bots.length + requirements.size * 2)),
@@ -192,7 +192,7 @@ export function createBotPackageExport(input: {
     };
   }
   return parseBotPackage({
-    format: "openmaus.package",
+    format: "agentbot.package",
     version: 1,
     package: definition,
   });

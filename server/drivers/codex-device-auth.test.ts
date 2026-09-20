@@ -90,7 +90,7 @@ describe("Codex server-owned device authentication", () => {
   const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 
   beforeEach(() => {
-    home = mkdtempSync(join(tmpdir(), "omb-device-auth-"));
+    home = mkdtempSync(join(tmpdir(), "agentbot-device-auth-"));
     cli = join(home, "fake-codex.mjs");
     writeFileSync(cli, FAKE, { mode: 0o700 });
     chmodSync(cli, 0o700);
@@ -118,7 +118,7 @@ describe("Codex server-owned device authentication", () => {
   it("drives the reusable browser fixture only when its local approval marker is created", async () => {
     const controller = create("waiting", {
       cli: fileURLToPath(new URL("../testing/fake-codex-login-cli.ts", import.meta.url)),
-      environment: () => ({ ...process.env, HOME: home, CODEX_HOME: join(home, ".codex"), OMB_DEVICE_AUTH_FIXTURE: "1" }),
+      environment: () => ({ ...process.env, HOME: home, CODEX_HOME: join(home, ".codex"), AGENTBOT_DEVICE_AUTH_FIXTURE: "1" }),
     });
     const start = await controller.start();
     expect(start.userCode).toBe("TEST-12345");

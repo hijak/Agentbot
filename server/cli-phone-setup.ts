@@ -1,18 +1,12 @@
 // Optional phone onboarding only chooses a route. The caller owns starting,
 // verifying and stopping that route, and minting/cancelling its pairing code.
 import type { CliOptions } from "./cli.ts";
-import { SetupCancelled, type SetupIo } from "./cli-prompts.ts";
+import type { SetupIo } from "./cli-prompts.ts";
 
 export type PhoneKind = "ios" | "android";
 export interface PhoneSetupResult {
   options: CliOptions;
   phone?: PhoneKind;
-}
-export interface PhoneSetupDependencies {
-  /** May read saved tunnel credentials, but must not sign in or start a tunnel. */
-  accountReady?(options: CliOptions): boolean | Promise<boolean>;
-  /** The caller supplies account sign-in; email uses ask, the emailed code secret. */
-  login(options: CliOptions, io: SetupIo): Promise<number>;
 }
 
 /** A configured HTTPS origin, not proof that a phone can reach it. Never accept
@@ -37,37 +31,19 @@ export function normalizePhoneOrigin(raw: string): string | null {
 export async function runPhoneSetup(
   options: CliOptions,
   io: SetupIo,
-  deps: PhoneSetupDependencies,
 ): Promise<PhoneSetupResult> {
   const skip = (): PhoneSetupResult => ({ options });
   const selected = (phone: PhoneKind, route: Partial<CliOptions> = {}): PhoneSetupResult => ({
     options: { ...options, ...route, client: true, pair: true }, phone,
   });
-  const signIn = async (): Promise<boolean> => {
-    try {
-      if (await deps.accountReady?.(options)) {
-        io.log("Your saved OpenMausBot account can be reused. The connection will be checked when the server starts.");
-        return true;
-      }
-      io.log("Sign in to an OpenMausBot account using an emailed code. This is separate from your AI provider account.");
-      if (await deps.login(options, io) === 0) return true;
-    } catch (error) {
-      if (error instanceof SetupCancelled) throw error;
-      // Account errors can contain credentials or URLs. Leave details to the
-      // account UI rather than echoing an arbitrary error into terminal logs.
-    }
-    io.log("Phone access could not be prepared. Your AI provider setup is still saved; you can try phone setup later.");
-    return false;
-  };
   for (;;) {
-    const device = await io.choose("Use OpenMausBot on your phone?", [
+    const device = await io.choose("Use Agentbot on your phone?", [
       "Skip for now",
       "iPhone / iPad — native app or Safari",
       "Android — app or browser",
     ], 0);
     if (device === 0) return skip();
     const phone: PhoneKind = device === 1 ? "ios" : "android";
-    if (options.tunnel) return await signIn() ? selected(phone) : skip();
     if (options.tailscale) {
       io.log("Keep Tailscale connected on both this computer and your phone, on the same tailnet.");
       return selected(phone);
@@ -81,25 +57,17 @@ export async function runPhoneSetup(
     let back = false;
     while (!back) {
       const route = await io.choose("How should your phone reach this computer?", [
-        "Managed HTTPS address — protected by pairing",
         "Existing Tailscale — only your tailnet",
         "Existing HTTPS address — advanced",
         "Back to phone choice",
         "Skip for now",
-      ], 4);
-      if (route === 4) return skip();
-      if (route === 3) { back = true; continue; }
+      ], 3);
+      if (route === 3) return skip();
+      if (route === 2) { back = true; continue; }
       if (route === 0) {
-        io.log("This creates a public HTTPS endpoint through Cloudflare. Chat and settings require device pairing; the sign-in page and basic server identity are public.");
-        io.log("Starting it may download the Cloudflare connector. It stays active while OpenMausBot runs; stop OpenMausBot to close the connection.");
-        if (!await io.confirm("Allow this managed public endpoint and connector download?", false)) continue;
-        if (!await signIn()) return skip();
-        return selected(phone, { tunnel: true, tailscale: false, publicUrl: undefined });
-      }
-      if (route === 1) {
         io.log("Tailscale must already be installed and signed in on this computer and phone, with HTTPS certificates enabled for the tailnet.");
-        if (!await io.confirm("Allow OpenMausBot to serve HTTPS to your tailnet while it runs?", false)) continue;
-        return selected(phone, { tailscale: true, tunnel: false, publicUrl: undefined });
+        if (!await io.confirm("Allow Agentbot to serve HTTPS to your tailnet while it runs?", false)) continue;
+        return selected(phone, { tailscale: true, publicUrl: undefined });
       }
       io.log("Use an HTTPS reverse proxy you already configured for this server. Enter only its origin, without a password, pairing code, path, query or fragment.");
       const answer = await io.ask("Existing HTTPS address (Enter goes back): ");
@@ -110,7 +78,7 @@ export async function runPhoneSetup(
         continue;
       }
       io.log("This does not create a proxy or open a LAN listener. Its connection will be checked before pairing.");
-      return selected(phone, { publicUrl: origin, tunnel: false, tailscale: false });
+      return selected(phone, { publicUrl: origin, tailscale: false });
     }
   }
 }
@@ -124,12 +92,12 @@ export function phonePairingInstructions(
   const origin = input.origin ? normalizePhoneOrigin(input.origin) : null;
   if (!input.ready || !origin) {
     return ["Phone access is not ready yet. No phone QR should be shown until the HTTPS connection is verified.",
-      "Your local OpenMausBot can still be used on this computer."];
+      "Your local Agentbot can still be used on this computer."];
   }
   return [
     phone === "ios"
-      ? "On iPhone or iPad, scan the QR with Camera to open Safari. If you already have the OpenMausBot iOS app, use its pairing scanner or paste the full pairing link there."
-      : "On Android, open the OpenMausBot app and scan the QR with its pairing scanner. The QR is an app link, so Camera will not open it in a browser.",
+      ? "On iPhone or iPad, scan the QR with Camera to open Safari. If you already have the Agentbot iOS app, use its pairing scanner or paste the full pairing link there."
+      : "On Android, open the Agentbot app and scan the QR with its pairing scanner. The QR is an app link, so Camera will not open it in a browser.",
     `Or open ${origin}/pair on your phone and enter the code.`,
     "Choose Connect on the phone. Scanning a QR does not mean the phone is paired.",
     "The code works once and expires after five minutes. This phone receives client access: chat and approvals, not settings or pairing administration.",

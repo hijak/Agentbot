@@ -2,7 +2,7 @@
 // and Fish Audio (each with its own key), the Mac's built-in voices
 // (system-voices.ts, no key), and a local Chatterbox server
 // (chatterbox.ts, an address instead of a key). This file is only the part that reads
-// ~/.openmausbot/config.json, picks the engine, and decides whether there
+// ~/.agentbot/config.json, picks the engine, and decides whether there
 // is a voice at all.
 import type { AppConfig } from "../config.ts";
 import * as chatterbox from "./chatterbox.ts";
@@ -10,7 +10,18 @@ import * as elevenlabs from "./elevenlabs.ts";
 import * as fish from "./fish.ts";
 import * as systemVoices from "./system-voices.ts";
 
-export type VoiceProvider = "elevenlabs" | "fish" | "system" | "chatterbox";
+export type VoiceProvider = "elevenlabs" | "fish" | "system" | "chatterbox" | "jax-js";
+
+export const JAX_JS_VOICES: elevenlabs.Voice[] = [
+  { id: "alba", label: "Alba", description: "Balanced narrator, warm and clear" },
+  { id: "azelma", label: "Azelma", description: "Expressive, animated, playful" },
+  { id: "cosette", label: "Cosette", description: "Bright, youthful, clear" },
+  { id: "eponine", label: "Eponine", description: "Lively, energetic, sharp" },
+  { id: "fantine", label: "Fantine", description: "Soft, gentle, compassionate" },
+  { id: "javert", label: "Javert", description: "Deep, stern, authoritative" },
+  { id: "jean", label: "Jean", description: "Mature, thoughtful, calm" },
+  { id: "marius", label: "Marius", description: "Friendly, spirited, youthful" },
+];
 
 export class NoVoiceConfigured extends Error {
   // a plain field rather than a constructor parameter property: the harness
@@ -31,7 +42,9 @@ export class NoVoiceConfigured extends Error {
 
 export function voiceProvider(cfg: AppConfig): VoiceProvider {
   const provider = cfg.tts?.provider;
-  return provider === "fish" || provider === "system" || provider === "chatterbox" ? provider : "elevenlabs";
+  return provider === "fish" || provider === "system" || provider === "chatterbox" || provider === "jax-js"
+    ? provider
+    : "elevenlabs";
 }
 
 /** The system provider needs no credential — it is only ever offered where
@@ -39,6 +52,7 @@ export function voiceProvider(cfg: AppConfig): VoiceProvider {
  * speak", not "a key is on file". */
 export function providerConfigured(cfg: AppConfig): boolean {
   const provider = voiceProvider(cfg);
+  if (provider === "jax-js") return true;
   if (provider === "system") return systemVoices.systemVoicesAvailable();
   if (provider === "chatterbox") return Boolean(cfg.tts?.baseUrl?.trim());
   if (provider === "fish") return Boolean(cfg.tts?.fishKey);
@@ -47,6 +61,7 @@ export function providerConfigured(cfg: AppConfig): boolean {
 
 export function voiceConfigured(cfg: AppConfig): boolean {
   const provider = voiceProvider(cfg);
+  if (provider === "jax-js") return Boolean(cfg.tts?.voice);
   if (provider === "system") {
     return systemVoices.systemVoicesAvailable() && Boolean(cfg.tts?.voice);
   }
@@ -59,6 +74,7 @@ export function voiceConfigured(cfg: AppConfig): boolean {
  * because the app-wide fallback has not been selected yet. */
 export function voiceReady(cfg: AppConfig, voiceId?: string): boolean {
   const provider = voiceProvider(cfg);
+  if (provider === "jax-js") return Boolean(voiceId || cfg.tts?.voice);
   if (provider === "system") {
     return systemVoices.systemVoicesAvailable() && Boolean(voiceId || cfg.tts?.voice);
   }
@@ -88,6 +104,7 @@ export function verifyKey(provider: "elevenlabs" | "fish", key: string) {
 
 export async function listVoices(cfg: AppConfig, run?: systemVoices.Runner): Promise<elevenlabs.Voice[]> {
   const provider = voiceProvider(cfg);
+  if (provider === "jax-js") return JAX_JS_VOICES;
   if (provider === "system") return systemVoices.listSystemVoices(run);
   if (provider === "chatterbox") {
     const baseUrl = cfg.tts?.baseUrl?.trim();
@@ -106,6 +123,11 @@ export async function listVoices(cfg: AppConfig, run?: systemVoices.Runner): Pro
  * to speak with, which the route turns into a 409 the client can explain. */
 export function speak(cfg: AppConfig, text: string, voiceId?: string, run?: systemVoices.Runner) {
   const provider = voiceProvider(cfg);
+  if (provider === "jax-js") {
+    const voice = voiceId || cfg.tts?.voice;
+    if (!voice) throw new NoVoiceConfigured("voice");
+    throw new Error("jax-js synthesizes speech in-browser on the client side.");
+  }
   if (provider === "system") {
     const voice = voiceId || cfg.tts?.voice;
     // An injected runner is the cross-platform test seam for `/usr/bin/say`;

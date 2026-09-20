@@ -4,8 +4,8 @@ Use installed native engine and Chrome binaries explicitly; the fixture never
 uses the operator's browser profiles, OMB home, provider logins, or API keys.
 
 ```sh
-OMB_VERIFY_BROWSER_BINARY=/absolute/path/to/agent-browser \
-OMB_VERIFY_BROWSER_CHROME=/absolute/path/to/chrome-headless-shell \
+AGENTBOT_VERIFY_BROWSER_BINARY=/absolute/path/to/agent-browser \
+AGENTBOT_VERIFY_BROWSER_CHROME=/absolute/path/to/chrome-headless-shell \
 node --experimental-strip-types scripts/verify-browser-live.ts
 ```
 
@@ -70,9 +70,9 @@ does not import personal chats, provider settings, skills or browser profiles.
 Never point its requests at the user's running app.
 
 ```sh
-OMB_VERIFY_CODEX_CLI=/absolute/path/to/codex \
-OMB_VERIFY_CODEX_AUTH=/absolute/path/to/auth.json \
-OMB_VERIFY_CODEX_MODEL=your-supported-model \
+AGENTBOT_VERIFY_CODEX_CLI=/absolute/path/to/codex \
+AGENTBOT_VERIFY_CODEX_AUTH=/absolute/path/to/auth.json \
+AGENTBOT_VERIFY_CODEX_MODEL=your-supported-model \
 node --experimental-strip-types scripts/verify-codex-surface-live.ts
 ```
 

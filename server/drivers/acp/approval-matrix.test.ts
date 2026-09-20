@@ -48,7 +48,7 @@ describe("remaining ACP approval mappings", () => {
   ];
   it.each(cases)("$driver.driverKind preserves residual requests across Full → Auto → Ask", async ({ driver, argv, native }) => {
     ensureDirs();
-    const scratch = mkdtempSync(join(tmpdir(), "omb-approval-matrix-"));
+    const scratch = mkdtempSync(join(tmpdir(), "agentbot-approval-matrix-"));
     const dump = join(scratch, "spawn.json");
     const rpcDump = join(scratch, "rpc.json");
     const instance = await driver.create({

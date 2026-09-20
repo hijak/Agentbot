@@ -1,8 +1,8 @@
-// OpenMausBot server — the harness host. Clients hold no transports
+// Agentbot server — the harness host. Clients hold no transports
 // (upstream rule): the React app dispatches typed commands over HTTP and
 // folds one SSE event stream; every provider process runs here.
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { rm as removeDirectory } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { extname, join } from "node:path";
@@ -93,7 +93,7 @@ import {
 import * as composio from "./composio.ts";
 import { chiefOfStaffSystemPrompt } from "./chief-of-staff.ts";
 import { canAccessTeam, canReachPeer, peerAllowed, peerName, peerRosterSystemPrompt, peerStatus, peerStatusWords, reachablePeers, resolveTeammate, roomPeerRosterSystemPrompt, roomRosterLine } from "./peer-roster.ts";
-import { openMausStatusSystemPrompt } from "./openmaus-status-capsule.ts";
+import { openMausStatusSystemPrompt } from "./agentbot-status-capsule.ts";
 import {
   containerComputerAction,
   containerComputerExists,
@@ -435,11 +435,11 @@ import {
   type PhoneSecretContext,
 } from "./phone-secret.ts";
 
-const PORT = Number(process.env.OMB_PORT || process.env.OGB_PORT || 8799);
-const WEBHOOK_PORT = Number(process.env.OMB_WEBHOOK_PORT || PORT + 1);
+const PORT = Number(process.env.AGENTBOT_PORT || process.env.OGB_PORT || 8799);
+const WEBHOOK_PORT = Number(process.env.AGENTBOT_WEBHOOK_PORT || PORT + 1);
 // Behind a proxy or tunnel, the base URL senders should use (docs/self-hosting.md).
-const WEBHOOK_PUBLIC_URL = process.env.OMB_WEBHOOK_PUBLIC_URL || undefined;
-const STATIC_DIR = process.env.OMB_STATIC_DIR || null;
+const WEBHOOK_PUBLIC_URL = process.env.AGENTBOT_WEBHOOK_PUBLIC_URL || undefined;
+const STATIC_DIR = process.env.AGENTBOT_STATIC_DIR || null;
 const MIME: Record<string, string> = {
   ".html": "text/html",
   ".js": "text/javascript",
@@ -480,7 +480,7 @@ if (existsSync(join(DATA_DIR, ".backups"))) {
 }
 const workspaceMaintenance = new WorkspaceBackupMaintenance();
 // Only after ensureDirs(): it performs the one-time rename of the legacy data
-// dir, which must not find a freshly created ~/.openmausbot already there.
+// dir, which must not find a freshly created ~/.agentbot already there.
 // Remote clients (server/request-auth.ts, server/sessions.ts): a stable identity
 // for this server, the paired sessions, and the cookie the served UI uses.
 const ENVIRONMENT_ID = loadEnvironmentId(DATA_DIR);
@@ -500,13 +500,13 @@ const sharedComputers = new SharedComputers(id => sessions.isLive(id));
 const SESSION_COOKIE = sessionCookieName(PORT, ENVIRONMENT_ID);
 const HOSTED_WORKSPACE = hostedWorkspaceConfigured();
 let workspaceAccess: WorkspaceAccess | null = null;
-const DESKTOP_MANAGED = process.env.OMB_DESKTOP_PARENT === "1";
+const DESKTOP_MANAGED = process.env.AGENTBOT_DESKTOP_PARENT === "1";
 // Empty is deliberately a deny-all bootstrap state. Only Electron's private
 // utility-process port can replace it with the per-launch owner capability.
 let desktopMutationToken: string | undefined = DESKTOP_MANAGED ? "" : undefined;
 let companionMutationToken: string | undefined = DESKTOP_MANAGED ? "" : undefined;
 // Where remote clients reach this server (a proxy's public address); pairing URLs use it.
-const FALLBACK_PUBLIC_URL = process.env.OMB_PUBLIC_URL?.trim().replace(/\/+$/, "") || null;
+const FALLBACK_PUBLIC_URL = process.env.AGENTBOT_PUBLIC_URL?.trim().replace(/\/+$/, "") || null;
 const cfg = loadConfig();
 // The per-thread event log cap is checked after every NDJSON append.
 // config.json is read once per process (a change restarts the server, like
@@ -568,11 +568,11 @@ type UtilityParentPort = {
 // supplies parentPort; plain Node intentionally leaves it absent.
 const utilityParentPort = (process as NodeJS.Process & { parentPort?: UtilityParentPort }).parentPort;
 type DesktopPrivateMessage = BrowserCleanupWireRequest | {
-  type: "openmausbot:browser-control";
+  type: "agentbot:browser-control";
   botId: string;
   held: true;
 } | {
-  type: "openmausbot:phone-secret-save";
+  type: "agentbot:phone-secret-save";
   requestId: string;
   target: string;
   value: string;
@@ -606,7 +606,7 @@ function postDesktopPrivateMessage(message: DesktopPrivateMessage): boolean {
 function applyDesktopMutationTokenMessage(raw: unknown): boolean {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return false;
   const message = raw as Record<string, unknown>;
-  if (message.type !== "openmausbot:desktop-mutation-token") return false;
+  if (message.type !== "agentbot:desktop-mutation-token") return false;
   if (typeof message.token !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(message.token)) {
     throw new Error("invalid desktop mutation capability");
   }
@@ -625,7 +625,7 @@ const browserCleanup: BrowserCleanupCoordinator = new BrowserCleanupCoordinator(
     const status = browserEngineStatus();
     // Guest sessions are throwaway and never saved, so only the bot's own
     // session and shared profile sessions have state to clear.
-    const sessions = request.type === "openmausbot:browser-bot-deleted" && request.botId
+    const sessions = request.type === "agentbot:browser-bot-deleted" && request.botId
       ? [browserSessionId(request.botId, "")]
       : request.partitionId
         ? [browserSessionId("", request.partitionId)]
@@ -635,7 +635,7 @@ const browserCleanup: BrowserCleanupCoordinator = new BrowserCleanupCoordinator(
     const work = status.kind === "ready" && sessions.length
       ? Promise.all(sessions.map(async (session) => {
           const ok = await clearBrowserSessionState(status.binaryPath, session, { encryptionKey: browserEngineEncryptionKey() });
-          if (!ok) console.warn(`browser cleanup: could not clear saved state for session ${session}; restart OpenMausBot to retry this profile's cleanup. Do not use state clear --all: it erases other profiles too.`);
+          if (!ok) console.warn(`browser cleanup: could not clear saved state for session ${session}; restart Agentbot to retry this profile's cleanup. Do not use state clear --all: it erases other profiles too.`);
           return ok;
         }))
       : Promise.resolve([true]);
@@ -643,7 +643,7 @@ const browserCleanup: BrowserCleanupCoordinator = new BrowserCleanupCoordinator(
       console.warn("browser cleanup: could not clear saved session state", error);
       return false;
     }).then((ok) => {
-      browserCleanup.receive({ type: "openmausbot:browser-lifecycle-result", requestId: request.requestId, ok });
+      browserCleanup.receive({ type: "agentbot:browser-lifecycle-result", requestId: request.requestId, ok });
     }).catch((error) => {
       console.warn("browser cleanup: could not acknowledge cleanup", error);
     });
@@ -684,12 +684,12 @@ const managedDesktop = new ManagedDesktopProviders({
 // config patch for its organization identity, endpoint, or model capability.
 utilityParentPort?.on("message", event => {
   const message = event.data as { type?: unknown; requestId?: unknown; connection?: unknown } | undefined;
-  if (message?.type !== "openmausbot:managed-desktop") return;
+  if (message?.type !== "agentbot:managed-desktop") return;
   const requestId = typeof message.requestId === "string" && message.requestId.length <= 100 ? message.requestId : undefined;
   void companyRuntimeStarted.then(() => managedDesktop.apply(message.connection)).then(() => {
-    utilityParentPort.postMessage({ type: "openmausbot:managed-desktop-result", requestId, ok: true });
+    utilityParentPort.postMessage({ type: "agentbot:managed-desktop-result", requestId, ok: true });
   }, () => {
-    utilityParentPort.postMessage({ type: "openmausbot:managed-desktop-result", requestId, ok: false, error: "Company connection could not be applied. Reconnect from desktop Settings." });
+    utilityParentPort.postMessage({ type: "agentbot:managed-desktop-result", requestId, ok: false, error: "Company connection could not be applied. Reconnect from desktop Settings." });
   });
 });
 
@@ -891,17 +891,17 @@ function agentsIntegration(
     args: [agentsProxyPath],
     env: {
       ...AGENTS_NODE_FLAG,
-      OMB_HARNESS_URL: `http://127.0.0.1:${PORT}`,
-      OMB_BOT_ID: botId,
-      OMB_THREAD_ID: threadId,
-      OMB_COMMS_TOKEN: token,
-      OMB_TURN_DEPTH: String(depth),
-      OMB_ROOM_TURN: roomCoordination ? "1" : "0",
-      OMB_OWN_THREAD_CREATION: ownThreadCreation ? "1" : "0",
-      OMB_SKILL_AUTHORING_ENABLED: skillAuthoring ? "1" : "0",
+      AGENTBOT_HARNESS_URL: `http://127.0.0.1:${PORT}`,
+      AGENTBOT_BOT_ID: botId,
+      AGENTBOT_THREAD_ID: threadId,
+      AGENTBOT_COMMS_TOKEN: token,
+      AGENTBOT_TURN_DEPTH: String(depth),
+      AGENTBOT_ROOM_TURN: roomCoordination ? "1" : "0",
+      AGENTBOT_OWN_THREAD_CREATION: ownThreadCreation ? "1" : "0",
+      AGENTBOT_SKILL_AUTHORING_ENABLED: skillAuthoring ? "1" : "0",
       // The shared-computer tools are advertised only while the workspace
       // gate is on; the routes behind them refuse regardless.
-      OMB_SHARED_COMPUTERS_ENABLED: sharedComputersEnabled(cfg) ? "1" : "0",
+      AGENTBOT_SHARED_COMPUTERS_ENABLED: sharedComputersEnabled(cfg) ? "1" : "0",
     },
   };
 }
@@ -1254,7 +1254,7 @@ async function browserIntegration(botId: string, profile: string | undefined, tu
     kind: "browser", depth: 0, skillAuthoring: false, createdBots: 0, openedThreads: 0 });
   return { profile: partitionId, session, spec, integration: {
     command: process.execPath, args: [SPAWNED_PROXIES.browser], env: {
-      ...AGENTS_NODE_FLAG, OMB_BROWSER_TOKEN: token, OMB_HARNESS_URL: `http://127.0.0.1:${PORT}`,
+      ...AGENTS_NODE_FLAG, AGENTBOT_BROWSER_TOKEN: token, AGENTBOT_HARNESS_URL: `http://127.0.0.1:${PORT}`,
     },
   } };
 }
@@ -1272,8 +1272,8 @@ export function browserEngineSummary(): { kind: "engine" | "unavailable"; reason
 
 function phoneIntegration() {
   const env: Record<string, string> = { ...AGENTS_NODE_FLAG };
-  if (process.env.OMB_ADB_PATH) env.OMB_ADB_PATH = process.env.OMB_ADB_PATH;
-  if (process.env.OMB_RESOURCES_PATH) env.OMB_RESOURCES_PATH = process.env.OMB_RESOURCES_PATH;
+  if (process.env.AGENTBOT_ADB_PATH) env.AGENTBOT_ADB_PATH = process.env.AGENTBOT_ADB_PATH;
+  if (process.env.AGENTBOT_RESOURCES_PATH) env.AGENTBOT_RESOURCES_PATH = process.env.AGENTBOT_RESOURCES_PATH;
   if (process.env.PH_ANDROID_SERIAL) env.PH_ANDROID_SERIAL = process.env.PH_ANDROID_SERIAL;
   return { command: process.execPath, args: [phoneProxyPath], env };
 }
@@ -1313,7 +1313,7 @@ const computerControl = new ComputerControl((key, snapshot) => {
   // server record, while only the trusted Browser panel may clear Electron's
   // local gate after its server-first release succeeds.
   if (snapshot.held && /^[A-Za-z0-9_-]{1,120}$/.test(botId)) {
-    postDesktopPrivateMessage({ type: "openmausbot:browser-control", botId, held: true });
+    postDesktopPrivateMessage({ type: "agentbot:browser-control", botId, held: true });
   }
   broadcast({ kind: "computer-control", botId, held: snapshot.held, helpReason: snapshot.helpReason });
   }
@@ -1684,7 +1684,7 @@ function previewSystemPrompt(bot: BotRecord) {
   // `cfg` is the module-level config (`const cfg = loadConfig()` near the
   // top of index.ts), the same object the turn code reads.
   const persona = [
-    `You are ${bot.name}, a personal bot in OpenMausBot.`,
+    `You are ${bot.name}, a personal bot in Agentbot.`,
     bot.title && `Role: ${bot.title}.`,
     bot.description && `About: ${bot.description}`,
   ]
@@ -3211,7 +3211,7 @@ sessions.onSessionRevoked((sessionId) => {
  * correctly through its own Last-Event-ID with no client code at all. */
 const STREAM_ID = randomUUID().slice(0, 8);
 const REPLAY_MAX = 500;
-const configuredSseHeartbeatMs = Number(process.env.OMB_SSE_HEARTBEAT_MS);
+const configuredSseHeartbeatMs = Number(process.env.AGENTBOT_SSE_HEARTBEAT_MS);
 const SSE_HEARTBEAT_MS =
   Number.isFinite(configuredSseHeartbeatMs) && configuredSseHeartbeatMs > 0
     ? configuredSseHeartbeatMs
@@ -3418,16 +3418,16 @@ const repeats = new RepeatDetector({ thresholds: [5, 10, 20], maxKeysPerThread: 
 // left its bot busy forever. The watchdog stops a turn whose thread has emitted NOTHING for stallMs —
 // activity-based, so an hour-long turn that keeps streaming is never
 // touched, and turns parked on a human approval are exempt.
-const TURN_STALL_MS = Math.max(60_000, Number(process.env.OMB_TURN_STALL_MS) || 20 * 60_000);
+const TURN_STALL_MS = Math.max(60_000, Number(process.env.AGENTBOT_TURN_STALL_MS) || 20 * 60_000);
 /** How long ask_bot waits synchronously before the ask is converted into a
  * delegation claim ticket (the peer's turn keeps running either way). */
-const ASK_BOT_TIMEOUT_MS = Math.max(5_000, Number(process.env.OMB_ASK_BOT_TIMEOUT_MS) || 4 * 60_000);
+const ASK_BOT_TIMEOUT_MS = Math.max(5_000, Number(process.env.AGENTBOT_ASK_BOT_TIMEOUT_MS) || 4 * 60_000);
 // A room waits for a busy teammate instead of dropping them, but never
 // forever: a bot parked on a permission card in another chat is "busy" until
 // a human returns. Past this cap a goal's lead is told the teammate could not
 // free up and reassigns, and a chat round moves on with a chip that says so —
 // the wait ends as data, not as a dead room. Tests shrink it.
-const GROUP_GOAL_WAIT_MAX_MS = Math.max(1_000, Number(process.env.OMB_GOAL_WAIT_MAX_MS) || 30 * 60_000);
+const GROUP_GOAL_WAIT_MAX_MS = Math.max(1_000, Number(process.env.AGENTBOT_GOAL_WAIT_MAX_MS) || 30 * 60_000);
 // Reassigning around a busy teammate is bounded too: after this many
 // exhausted waits in one run the team is blocked on availability, not stuck.
 const GROUP_GOAL_MAX_WAIT_EXHAUSTIONS = 3;
@@ -4323,7 +4323,7 @@ bus.subscribe((event: RuntimeEvent) => {
       const permission = event.requestType === "permission" && !event.questions?.length;
       // A permission request here is one the provider left for a person: its
       // own mode already ran (Ask, Edits, Auto's reviewer, Custom's config).
-      // OpenMausBot decides nothing about the action itself. Only Full access
+      // Agentbot decides nothing about the action itself. Only Full access
       // answers, because that is exactly what the person granted. A QUESTION
       // always reaches the human — even Full access never invents an answer.
       const asker = bot ?? (speaker ? store.bot(speaker.botId) : undefined);
@@ -4837,7 +4837,7 @@ function wakeUndispatchedDelegation(receipt: DelegationReceipt, routineRunId?: s
 // real provider instance id. A unique suffix also closes the setup race: if
 // another result arrives while that replay is launching, the newer marker is
 // left intact for one more replay instead of being accidentally consumed.
-const EXTERNAL_CONTEXT_MARKER_PREFIX = "__openmaus_external_context__:";
+const EXTERNAL_CONTEXT_MARKER_PREFIX = "__agentbot_external_context__:";
 
 function isExternalContextMarker(value: string | undefined): boolean {
   return Boolean(value?.startsWith(EXTERNAL_CONTEXT_MARKER_PREFIX));
@@ -5673,7 +5673,7 @@ async function startTurn(
   const recoveryText = resumeCursor !== undefined ? buildRecoveryText({ text: turnText, transcript }) : undefined;
 
   const persona = [
-    `You are ${bot.name}, a personal bot in OpenMausBot.`,
+    `You are ${bot.name}, a personal bot in Agentbot.`,
     bot.title && `Role: ${bot.title}.`,
     bot.description && `About: ${bot.description}`,
   ]
@@ -5782,7 +5782,7 @@ async function startTurn(
         throw Object.assign(new Error("another thread is working in this project folder — wait for it to finish or choose a separate folder"), { status: 409, code: "workspace_busy" });
       }
       // Checkpoint explicit project folders, where a bot can overwrite the
-      // user's work. Its private OpenMaus workspace is app-owned and changes
+      // user's work. Its private Agentbot workspace is app-owned and changes
       // on nearly every ordinary chat; snapshotting it would add hidden disk
       // and process overhead without a user project to restore.
       const checkpointCwd = cwd && cwd !== privateWorkspace ? cwd : undefined;
@@ -5988,7 +5988,7 @@ async function startTurn(
             : "this model engine cannot control this computer — choose Claude or an ACP engine, or select another destination");
         }
         const cua = readCuaConnection();
-        if (!cua) throw new Error("CUA Driver is not ready for this computer — check permissions and restart OpenMausBot");
+        if (!cua) throw new Error("CUA Driver is not ready for this computer — check permissions and restart Agentbot");
         await bindTurnComputer(resourceOwner, "computer:host");
         integrations.localComputer = gatedLocalComputer(cua, controlIntegration(bot.id, threadId, dispatchClaimId));
         computerKind = "local";
@@ -6016,7 +6016,7 @@ async function startTurn(
             const vpsControl = controlIntegration(bot.id, threadId, dispatchClaimId);
             integrations.localComputer = {
               ...vpsMcp,
-              env: { ...vpsMcp.env, OMB_CONTROL_URL: vpsControl.url, OMB_CONTROL_TOKEN: vpsControl.token },
+              env: { ...vpsMcp.env, AGENTBOT_CONTROL_URL: vpsControl.url, AGENTBOT_CONTROL_TOKEN: vpsControl.token },
             };
             computerKind = "vps";
             previewCapture = () => vps.vpsComputerScreenshot(targetCfg, bot.id);
@@ -6776,10 +6776,10 @@ store.reconcileInterruptedGroupGoals((runId, threadId) => {
   );
   const detail = run.output ?? run.error ?? (
     status === "completed"
-      ? "The scheduled team goal completed before OpenMausBot restarted."
+      ? "The scheduled team goal completed before Agentbot restarted."
       : status === "stopped"
         ? "The scheduled team goal was stopped."
-        : "OpenMausBot restarted before this scheduled team goal finished."
+        : "Agentbot restarted before this scheduled team goal finished."
   );
   return { status, detail, finishedAt: run.finishedAt ?? groupGoalRecoveryAt };
 });
@@ -6817,7 +6817,7 @@ async function cloudRoutineReadiness(): Promise<{ ready: boolean; reason?: strin
   }
   const instance = registry.instances().find((candidate) => candidate.driverKind === "boxAgent");
   if (!instance) {
-    return { ready: false, reason: "The Cloud VM runner is unavailable. Restart OpenMausBot and try again." };
+    return { ready: false, reason: "The Cloud VM runner is unavailable. Restart Agentbot and try again." };
   }
   try {
     const snapshot = await instance.snapshot();
@@ -6918,12 +6918,12 @@ async function deleteBotWithLifecycle(botId: string, revalidate: () => void = ()
           const vm = await containerComputerStatus(undefined, undefined, target);
           if (!vm.daemonUp && existsSync(target.workspaceDir)) {
             return deletionResponse( 409, {
-              error: "start the container runtime so OpenMausBot can remove this bot's Local VM while deleting it",
+              error: "start the container runtime so Agentbot can remove this bot's Local VM while deleting it",
             });
           }
           if (vm.container !== "missing" && !vm.managed) {
             return deletionResponse(409, {
-              error: `The container named ${vm.container_name} was not created by OpenMausBot. Remove it manually before deleting this bot`,
+              error: `The container named ${vm.container_name} was not created by Agentbot. Remove it manually before deleting this bot`,
             });
           }
           localVmCleanup = {
@@ -7132,7 +7132,7 @@ function dispatchTeamSetupResume(entry: TeamSetupResumeEntry): void {
     pendingTeamSetupResumes.set(request.requestId, entry);
     return;
   }
-  const prompt = `OpenMausBot team setup decision ${request.requestId}: ${JSON.stringify(request.result)}. Report this exact result and continue the user's already requested work. Do not ask for confirmation again or repeat this setup/deletion. A denied or cancelled operation did not authorize any substitute action. Existing thread models were not changed.`;
+  const prompt = `Agentbot team setup decision ${request.requestId}: ${JSON.stringify(request.result)}. Report this exact result and continue the user's already requested work. Do not ask for confirmation again or repeat this setup/deletion. A denied or cancelled operation did not authorize any substitute action. Existing thread models were not changed.`;
   const failed = (error: string) => {
     if (cancelled()) return;
     const current = store.messagesFor(request.threadId).find((item) => item.id === messageId);
@@ -7365,10 +7365,10 @@ try {
     claimRequest: () => workspaceMaintenance.request(),
   });
   const advertised = WEBHOOK_PUBLIC_URL ? ` (advertised as ${webhookIngress.baseUrl})` : "";
-  console.log(`openmausbot webhook receiver on http://${webhookIngress.host}:${webhookIngress.port}${advertised}`);
+  console.log(`agentbot webhook receiver on http://${webhookIngress.host}:${webhookIngress.port}${advertised}`);
 } catch (error) {
   webhookIngressError = error instanceof Error ? error.message : String(error);
-  console.error(`openmausbot webhook receiver unavailable: ${webhookIngressError}`);
+  console.error(`agentbot webhook receiver unavailable: ${webhookIngressError}`);
 }
 
 const webhookIngressStatus = () => ({
@@ -7865,7 +7865,7 @@ async function runGroupMemberTurn(
     ? reachablePeers(store.bots, bot).filter((peer) => !readyGroup.memberIds.includes(peer.id))
     : [];
   const system = [
-    `You are ${bot.name}, a bot in the room "${readyGroup.name}" in OpenMausBot.`,
+    `You are ${bot.name}, a bot in the room "${readyGroup.name}" in Agentbot.`,
     bot.title && `Role: ${bot.title}.`,
     bot.description && `About: ${bot.description}`,
     `Room members: ${roster}, and ${userName} (the human).`,
@@ -7873,7 +7873,7 @@ async function runGroupMemberTurn(
     `Reply as yourself, briefly and conversationally. To bring a teammate in, mention them like @Name — they'll see the conversation and respond.`,
     outsideRoom.length > 0 && orchestration && !orchestration.roomHandoffId && roomPeerRosterSystemPrompt(outsideRoom),
     integrations.agents && (CREDENTIAL_PROMPT + (orchestration && !orchestration.roomHandoffId ? THREADS_PROMPT : "")).trim(),
-    integrations.agents && (!orchestration || orchestration.roomHandoffId) && "For actual OpenMausBot teamwork, discover IDs with list_room_targets and use coordinate_bots for advice or work in this or another room. Do not substitute native coding helpers for these named bots. Consult only when needed to make a decision; no discussion step is mandatory. Give concrete responsibilities, exact accessible paths and acceptance checks. End your turn after assigning; busy teammates queue and results automatically resume you. When they return, finish the requested verification and give the user one final answer. Native helper names are not evidence that an OpenMausBot teammate participated. Plain @mentions are only for conversational replies in this room.",
+    integrations.agents && (!orchestration || orchestration.roomHandoffId) && "For actual Agentbot teamwork, discover IDs with list_room_targets and use coordinate_bots for advice or work in this or another room. Do not substitute native coding helpers for these named bots. Consult only when needed to make a decision; no discussion step is mandatory. Give concrete responsibilities, exact accessible paths and acceptance checks. End your turn after assigning; busy teammates queue and results automatically resume you. When they return, finish the requested verification and give the user one final answer. Native helper names are not evidence that an Agentbot teammate participated. Plain @mentions are only for conversational replies in this room.",
     integrations.agents && ROUTINE_PROMPT.trim(),
     integrations.agents && PROFILE_PROMPT.trim(),
     skillAuthoring && LEARN_PROMPT.trim(),
@@ -9345,7 +9345,7 @@ function dispatchConnectorResume(entry: { botId: string; threadId: string; resum
   const owner = connectorThread(entry.botId, entry.threadId);
   if (!owner) return;
   const names = entry.labels.join(", ");
-  const prompt = `OpenMausBot connection update: the user securely connected ${names}. Continue the task that paused for this connection. Do not ask them to connect it again.`;
+  const prompt = `Agentbot connection update: the user securely connected ${names}. Continue the task that paused for this connection. Do not ask them to connect it again.`;
   if (owner.group ? owner.bot.busy : threadBusy(entry.botId, entry.threadId) || activeGroupTurnForBot(entry.botId)) {
     pendingConnectorResumes.set(`${entry.threadId}:${entry.resumeKey}`, entry);
     return;
@@ -9452,7 +9452,7 @@ function phoneSecretSubmissionKey(threadId: string, messageId: string, requestKe
 }
 
 function credentialDesktopHandoff(label: string): string {
-  return `Securely provide the ${label} from OpenMausBot on your phone or computer. It is never added to chat.`;
+  return `Securely provide the ${label} from Agentbot on your phone or computer. It is never added to chat.`;
 }
 
 function secretMessage(botId: string, threadId: string, messageId: string): Message | null {
@@ -9489,8 +9489,8 @@ function dispatchSecretResume(entry: SecretResumeEntry) {
   if (!owner) return;
   const prompt =
     entry.outcome === "provided"
-      ? `OpenMausBot credential update: the user securely provided ${entry.label}. Continue the task that paused for it. You do not receive the secret and must not ask them to paste it into chat.`
-      : `OpenMausBot credential update: the user declined to provide ${entry.label}. Continue without it if possible, or briefly explain the limitation. Do not ask them to paste it into chat.`;
+      ? `Agentbot credential update: the user securely provided ${entry.label}. Continue the task that paused for it. You do not receive the secret and must not ask them to paste it into chat.`
+      : `Agentbot credential update: the user declined to provide ${entry.label}. Continue without it if possible, or briefly explain the limitation. Do not ask them to paste it into chat.`;
   if (owner.group ? owner.bot.busy : threadBusy(entry.botId, entry.threadId) || activeGroupTurnForBot(entry.botId)) {
     pendingSecretResumes.set(`${entry.threadId}:${entry.messageId}`, entry);
     return;
@@ -9734,11 +9734,11 @@ function cliProbeEnvironment(): NodeJS.ProcessEnv {
     "BOX_TOKEN",
     "OPENCODE_API_KEY",
     "COMPOSIO_API_KEY",
-    "OMB_COMPOSIO_BROKER_TOKEN",
-    "OMB_TTS_KEY",
-    "OMB_FISH_AUDIO_API_KEY",
-    "OMB_OPENAI_IMAGE_KEY",
-    "OMB_CUSTOM_IMAGE_KEY",
+    "AGENTBOT_COMPOSIO_BROKER_TOKEN",
+    "AGENTBOT_TTS_KEY",
+    "AGENTBOT_FISH_AUDIO_API_KEY",
+    "AGENTBOT_OPENAI_IMAGE_KEY",
+    "AGENTBOT_CUSTOM_IMAGE_KEY",
     "ANTHROPIC_API_KEY",
     "OPENAI_API_KEY",
   ]) {
@@ -10126,7 +10126,7 @@ let mcpProbesInFlight = 0;
 const claudeUpdatesInFlight = new Set<string>();
 
 // ── HTTP plumbing ─────────────────────────────────────────────────────
-/** The built UI, when this process serves it (OMB_STATIC_DIR: set by the
+/** The built UI, when this process serves it (AGENTBOT_STATIC_DIR: set by the
  * desktop app and by the container image). Public by design: it is the same
  * bundle anyone can download, holds no secrets, and a remote browser must be
  * able to load /pair before it has a session. Returns false when there is
@@ -10286,7 +10286,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return json(res, 503, { error: "Hosted workspace readiness is unavailable." });
       }
       res.setHeader(HOSTED_CONTRACT_HEADER, String(HOSTED_CONTRACT_VERSION));
-      return json(res, 200, { ok: true, service: "openmausbot", membershipAuthority: "portal", workspace: hosted.workspace, ...HOSTED_CONTRACT_METADATA });
+      return json(res, 200, { ok: true, service: "agentbot", membershipAuthority: "portal", workspace: hosted.workspace, ...HOSTED_CONTRACT_METADATA });
     }
     // Hosted workspaces have one sign-in authority. A missing optional layer
     // must not accidentally reactivate legacy email/QR credential minting.
@@ -10305,10 +10305,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // code into a session. Everything else needs the loopback owner or a
     // paired session with the right scope.
     if (method === "GET" && !path.startsWith("/api/") && !path.startsWith("/.well-known/") && serveStatic(res, path)) return;
-    if (method === "GET" && path === "/.well-known/openmausbot/environment") {
+    if (method === "GET" && path === "/.well-known/agentbot/environment") {
       return json(res, 200, environmentDescriptor({ environmentId: ENVIRONMENT_ID, desktopManaged: DESKTOP_MANAGED, emailSignIn: !HOSTED_WORKSPACE && emailSignIn.enabled(), sharedComputers: sharedComputersEnabled(cfg) }));
     }
-    const domainCheck = /^\/\.well-known\/openmausbot\/domain-check\/([a-f0-9]{64})$/.exec(path);
+    const domainCheck = /^\/\.well-known\/agentbot\/domain-check\/([a-f0-9]{64})$/.exec(path);
     if (method === "GET" && domainCheck) {
       res.setHeader("cache-control", "no-store");
       const challenge = customDomainVerifier.challenge(domainCheck[1]);
@@ -10439,7 +10439,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // A stranger learns only the app name; pid (the desktop boot probe keys
     // on it) and the static flag stay behind the gate below.
     if (method === "GET" && path === "/api/health" && !gate.auth) {
-      return json(res, 200, { app: "openmausbot" });
+      return json(res, 200, { app: "agentbot" });
     }
     // The brand is public too: the sign-in page must carry the deployment's
     // name and icon before anyone has a session, and it holds nothing secret.
@@ -10514,7 +10514,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // credential encoding because those scanners cannot take a typed code.
       const serverName = environmentDescriptor({ environmentId: ENVIRONMENT_ID, desktopManaged: DESKTOP_MANAGED }).label;
       const invite = base
-        ? `openmausbot://pair?address=${encodeURIComponent(base)}&token=${encodeURIComponent(opened.credential)}&name=${encodeURIComponent(serverName)}`
+        ? `agentbot://pair?address=${encodeURIComponent(base)}&token=${encodeURIComponent(opened.credential)}&name=${encodeURIComponent(serverName)}`
         : null;
       return json(res, 200, {
         id: opened.id,
@@ -10526,7 +10526,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         serverName,
         hint: base
           ? null
-          : "this server has no public address to put in a link: set OMB_PUBLIC_URL, or open /pair on the address you use and type the code",
+          : "this server has no public address to put in a link: set AGENTBOT_PUBLIC_URL, or open /pair on the address you use and type the code",
       });
     }
     if (method === "GET" && path === "/api/auth/pairing") return json(res, 200, { pairings: sessions.openPairings(), publicUrl: publicUrl() });
@@ -10537,7 +10537,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       res.setHeader("cache-control", "no-store");
       if (method === "GET") return json(res, 200, customDomainStatus());
       if (method === "POST" || method === "DELETE") {
-        if (DESKTOP_MANAGED) return json(res, 409, { error: "Custom domains are configured on a self-hosted OpenMausBot server, not the desktop companion." });
+        if (DESKTOP_MANAGED) return json(res, 409, { error: "Custom domains are configured on a self-hosted Agentbot server, not the desktop companion." });
         if (!/^application\/json\b/i.test(String(req.headers["content-type"] ?? ""))) {
           return json(res, 415, { error: "content-type must be application/json" });
         }
@@ -10619,10 +10619,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // unless the launcher explicitly sets that key; production builds never
     // set it.
     if (method === "POST" && path === "/api/testing/internal-capability") {
-      const expected = process.env.OMB_TEST_INTERNAL_CAPABILITY_KEY ?? "";
-      const actual = Array.isArray(req.headers["x-openmausbot-test-capability"])
+      const expected = process.env.AGENTBOT_TEST_INTERNAL_CAPABILITY_KEY ?? "";
+      const actual = Array.isArray(req.headers["x-agentbot-test-capability"])
         ? ""
-        : String(req.headers["x-openmausbot-test-capability"] ?? "");
+        : String(req.headers["x-agentbot-test-capability"] ?? "");
       const expectedBytes = Buffer.from(expected);
       const actualBytes = Buffer.from(actual);
       if (
@@ -10749,7 +10749,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           source!.previousSurface = store.taskByThread(bot.id, bot.threadId)?.surface;
         }
         return json(res, 200, { status: "pending", surface: option.surface,
-          message: `End this turn now without using the previous computer tools. OpenMausBot will continue the original request on ${option.label} with a fresh tool connection.` });
+          message: `End this turn now without using the previous computer tools. Agentbot will continue the original request on ${option.label} with a fresh tool connection.` });
       }
       if (method === "POST" && path === "/api/internal/memory") {
         const body = await readInternalBody();
@@ -12450,7 +12450,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // ── independent webhook triggers ────────────────────────────────────
     // Management stays on the app-only server. Actual deliveries land on a
     // second, webhook-only loopback listener so Funnel or a future hosted
-    // relay never has to expose the rest of OpenMausBot's control surface.
+    // relay never has to expose the rest of Agentbot's control surface.
     if (path === "/api/webhooks" && method === "GET") {
       return json(res, 200, { webhooks: webhooks.list(), attempts: webhooks.listAttempts(), ingress: webhookIngressStatus() });
     }
@@ -12615,9 +12615,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // it never grants authority or replaces the existing request gate.
     const requirePinnedClientThread = (botId: string, threadId: unknown): void => {
       if (threadId === undefined &&
-        (auth.kind === "session" || req.headers["x-openmausbot-companion"] === "1") &&
+        (auth.kind === "session" || req.headers["x-agentbot-companion"] === "1") &&
         store.tasks(botId).length > 1) {
-        throw Object.assign(new Error("This bot has more than one thread. Update the OpenMausBot app on this device, then choose a thread and try again."), { status: 409 });
+        throw Object.assign(new Error("This bot has more than one thread. Update the Agentbot app on this device, then choose a thread and try again."), { status: 409 });
       }
     };
     if (method === "GET" && path === "/api/bots") {
@@ -12699,7 +12699,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // a bot must render a Markdown link to it, while a user message must carry
     // the exact standalone attachment tag written by the composer. The bot
     // branch derives conversation/workspace roots; the user branch is limited
-    // to OpenMausBot's private attachment directory. This is deliberately not
+    // to Agentbot's private attachment directory. This is deliberately not
     // a general path reader.
     m = path.match(/^\/api\/threads\/([\w-]+)\/messages\/([\w-]+)\/file$/);
     const streamsMessageImage = Boolean(
@@ -13026,7 +13026,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           ? body.name.trim()
           : profileName
             ? `${profileName}'s Team`
-            : "My OpenMaus Team";
+            : "My Agentbot Team";
       const memberIds = store.bots.filter((bot) => !bot.hidden).map((bot) => bot.id);
       if ((body.format === "backup" ? store.bots.length : memberIds.length) === 0) return json(res, 400, { error: "Create a bot before exporting your team" });
       try {
@@ -13154,7 +13154,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
       }
       const body = await readBody(req, MAX_TEAM_BACKUP_BYTES);
-      if (body?.format === "openmaus.backup") {
+      if (body?.format === "agentbot.backup") {
         if (importMode !== "add") return json(res, 400, { error: "Import backups alongside your existing bots; project mode is only for templates" });
         try {
           const imported = importTeamBackup(store, routines!, body, await defaultSelection());
@@ -14831,7 +14831,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // to open by hand instead.
       const workspacePath = memoryOverview(m[1]).workspacePath;
       if (auth.kind !== "loopback") {
-        return json(res, 403, { error: `This only works on the computer running OpenMausBot. The memory folder there is ${workspacePath}`, workspacePath });
+        return json(res, 403, { error: `This only works on the computer running Agentbot. The memory folder there is ${workspacePath}`, workspacePath });
       }
       const opened = await openMemoryLocation(m[1], parsed.data.target);
       if (!opened.ok) return json(res, 500, { error: opened.error, workspacePath: opened.workspacePath });
@@ -15009,7 +15009,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             // message intact for the next ordinary turn, where central image
             // admission can hand it to the provider natively.
             const carriesImages = extractTurnImages(text).images.length > 0;
-            if (!carriesImages && !computerSelectionTurns.get(threadId)?.selected && instance?.adapter.capabilities.queueing && instance.adapter.steer) {
+            const preferQueue = body.preferQueue === true;
+            if (!preferQueue && !carriesImages && !computerSelectionTurns.get(threadId)?.selected && instance?.adapter.capabilities.queueing && instance.adapter.steer) {
               steered = await instance.adapter
                 .steer(threadId, promptWithReply(text, replyTo, cfg.profile?.name?.trim() || "User"))
                 .catch((): SteerOutcome => "indeterminate");
@@ -15896,7 +15897,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // child proves it is OURS by echoing its pid (a stray dev server has
     // the same API shape but a different pid)
     if (method === "GET" && path === "/api/health") {
-      return json(res, 200, { app: "openmausbot", pid: process.pid, static: Boolean(STATIC_DIR) });
+      return json(res, 200, { app: "agentbot", pid: process.pid, static: Boolean(STATIC_DIR) });
     }
     // The bots' browser engine: install it on this machine (agent-browser +
     // a Chrome for Testing, a one-time download), or ask how that is going.
@@ -15927,7 +15928,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (fleetRoute) {
       if (!entitled("admin")) return json(res, 403, { error: "Workspaces need an enterprise licence with the admin feature." });
       const socket = fleetSocketPath();
-      if (!fleetAvailable(socket)) return json(res, 404, { error: "No fleet agent on this server. Run `openmausbot fleet init --domain … --operator <this user>` as root." });
+      if (!fleetAvailable(socket)) return json(res, 404, { error: "No fleet agent on this server. Run `agentbot fleet init --domain … --operator <this user>` as root." });
       const [, resource, slug, sub] = fleetRoute;
       let forward: { method: string; path: string; body?: unknown } | null = null;
       if (method === "GET" && !resource) forward = { method: "GET", path: "/workspaces" };
@@ -16091,7 +16092,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           return json(res, 200, { instances: await describeInstances() });
         }
         if (action === "install") {
-          if (!(await registry.installRuntime(instanceId))) return json(res, 404, { error: "Installing this engine from Settings is not available on this server. Use the install command on the machine running OpenMausBot." });
+          if (!(await registry.installRuntime(instanceId))) return json(res, 404, { error: "Installing this engine from Settings is not available on this server. Use the install command on the machine running Agentbot." });
           return json(res, 200, { instances: await describeInstances() });
         }
         if (action === "auth/start") {
@@ -16563,7 +16564,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               // deterministic rename. The replacement credential already
               // proved the exact deletion target, so its in-flight resource
               // is governed by that stronger target-bound receipt rather
-              // than an OpenMausBot name check.
+              // than an Agentbot name check.
               if (replacementProvedByDeletion && deletingBoxIds.has(recovery.boxId)) continue;
               const inspected = await box.inspectBoxIdentity({ box: { token: currentBoxToken } }, recovery.boxId);
               if (!inspected.available) {
@@ -16888,6 +16889,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       return json(res, 200, {
         ready: tts.voiceReady(cfg, typeof body.voiceId === "string" ? body.voiceId : undefined),
         utterances: toUtterances(String(body.text ?? "")),
+        provider: tts.voiceProvider(cfg),
+        voice: cfg.tts?.voice,
       });
     }
     if (method === "GET" && path === "/api/tts/voices") {
@@ -16969,10 +16972,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // Electron server has the private key needed to open the envelope.
     m = path.match(/^\/api\/bots\/([\w-]+)\/secret-cards\/([\w-]+)\/provide$/);
     if (m && method === "POST") {
-      if (req.headers["x-openmausbot-companion"] !== "1") {
+      if (req.headers["x-agentbot-companion"] !== "1") {
         return json(res, 403, { error: "Secure phone entry must come from a paired phone" });
       }
-      const rawDeviceId = req.headers["x-openmausbot-companion-device"];
+      const rawDeviceId = req.headers["x-agentbot-companion-device"];
       const authenticatedDeviceId = Array.isArray(rawDeviceId) ? "" : String(rawDeviceId ?? "");
       if (!/^[\w-]{1,128}$/.test(authenticatedDeviceId)) {
         return json(res, 401, { error: "This paired phone could not be verified" });
@@ -17397,7 +17400,7 @@ restoreChannelMessages();
 
 server.listen(PORT, "127.0.0.1", () => {
   companyRuntimeReady();
-  console.log(`openmausbot server on http://127.0.0.1:${PORT}`);
+  console.log(`agentbot server on http://127.0.0.1:${PORT}`);
   followupsReady = true;
   drainQueuedSends();
   drainQueuedChannelSends();
@@ -17422,21 +17425,6 @@ server.listen(PORT, "127.0.0.1", () => {
   setInterval(expireDelegationsNow, DELEGATION_SWEEP_MS).unref();
 });
 
-// A second listener for `openmausbot serve --tunnel` (server/tunnel.ts): the
-// connector gateway on this machine forwards public traffic to this IPC path.
-// Nothing changes about the loopback bind above. Requests arriving here have
-// no peer address, which request-auth treats as "through a proxy": a session
-// is required, never loopback trust, whatever headers the request carries.
-const TUNNEL_SOCKET = process.env.OMB_TUNNEL_SOCKET?.trim() || null;
-let tunnelListener: ReturnType<typeof createServer> | null = null;
-if (TUNNEL_SOCKET) {
-  if (process.platform !== "win32") rmSync(TUNNEL_SOCKET, { force: true });
-  tunnelListener = createServer(handleRequest);
-  tunnelListener.listen(TUNNEL_SOCKET, () => {
-    console.log(`openmausbot tunnel listener on ${TUNNEL_SOCKET}`);
-  });
-}
-
 const gracefulShutdown = createGracefulShutdown({
   cleanup: [
     () => {
@@ -17456,7 +17444,6 @@ const gracefulShutdown = createGracefulShutdown({
       routines?.stop();
       calendarCalls?.stop();
       webhookIngress?.server.close();
-      tunnelListener?.close();
     },
     async () => { await managedDesktop.close(); await registry.disposeAll(); },
     async () => {

@@ -133,18 +133,9 @@ export function groupTranscript(messages: Message[]): TranscriptItem[] {
   return group(messages, true);
 }
 
-const MAX_NAMES = 3;
-
-/** The one line a folded run has to earn its place with: how much work it
- * was and which tools did it. Failed steps are never folded. */
+/** The one line a folded run has to earn its place with: how many steps it
+ * was. Tool emojis ride beside this on the chip. Failed steps are never folded. */
 export function describeRun(messages: Message[]): string {
-  const counts = new Map<string, number>();
-  for (const message of messages) {
-    const name = message.tool?.name ?? "";
-    counts.set(name, (counts.get(name) ?? 0) + 1);
-  }
-  const names = [...counts].map(([name, count]) => (count > 1 ? `${name} ×${count}` : name));
-  const shown = names.slice(0, MAX_NAMES).join(", ");
-  const rest = names.length > MAX_NAMES ? ` ${t("chat.run.more", { count: names.length - MAX_NAMES })}` : "";
-  return t("chat.run.steps", { count: messages.length, tools: `${shown}${rest}` });
+  const count = messages.length;
+  return count === 1 ? t("chat.run.oneStep") : t("chat.run.nSteps", { count });
 }

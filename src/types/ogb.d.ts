@@ -164,13 +164,6 @@ const __APP_VERSION__: string;
         wakeState(): Promise<DesktopRoutineWake>;
         keepAwake(enabled: boolean): Promise<DesktopRoutineWake>;
       };
-      companionAccount?: {
-        state(): Promise<CompanionAccountState>;
-        requestCode(email: string): Promise<CompanionAccountState>;
-        verifyCode(email: string, code: string): Promise<CompanionAccountState>;
-        retry(): Promise<CompanionAccountState>;
-        signOut(): Promise<CompanionAccountState>;
-      };
       /** AgentHosting thin-client auth; active when this build is the hosted desktop app. */
       agentHosting?: {
         active: boolean;
@@ -243,7 +236,7 @@ const __APP_VERSION__: string;
         state(): Promise<{ maximized: boolean }>;
         onMaximizedChanged(cb: (maximized: boolean) => void): () => void;
       };
-      /** Receives a GitHub package URL opened through openmausbot://install. */
+      /** Receives a GitHub package URL opened through agentbot://install. */
       onPackageInstall?(cb: (url: string) => void): () => void;
       /** The desktop shell's app-menu Preferences… item was activated; open
        * app Settings. Local-shell only: remote server pages never receive
@@ -251,7 +244,7 @@ const __APP_VERSION__: string;
       onOpenAppSettings?(cb: () => void): () => void;
       /** Updates the native Dock/taskbar unread indicator. */
       setUnreadCount?(count: number): void;
-      /** Opens a live desktop as a sandboxed window owned by OpenMausBot. */
+      /** Opens a live desktop as a sandboxed window owned by Agentbot. */
       desktopViewer?: {
         open(url: string, title: string, contextId: string): Promise<boolean>;
         /** Closes the live-desktop window, but only when it belongs to this bot. */
@@ -283,7 +276,7 @@ const __APP_VERSION__: string;
       /** Writes the redacted diagnostics report to a user-chosen file;
        * resolves the path, or null when cancelled. */
       exportDiagnostics?(): Promise<string | null>;
-      /** Asks where to save a bot-created file (inside ~/.openmausbot), copies
+      /** Asks where to save a bot-created file (inside ~/.agentbot), copies
        * it there and reveals it. Resolves the chosen path, or null if the
        * user cancelled the dialog. */
       saveFile?(filePath: string): Promise<string | null>;
@@ -346,14 +339,6 @@ export interface UpdaterState {
   command?: string;
   /** hand-off only: whether a terminal was opened to paste it into */
   terminalOpened?: boolean;
-}
-
-export interface CompanionAccountState {
-  available: boolean;
-  status: "signed-out" | "connecting" | "ready" | "error";
-  email?: string;
-  endpoint?: string;
-  message?: string;
 }
 
 export interface AgentHostingAuthState {

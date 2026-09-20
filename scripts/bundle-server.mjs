@@ -41,9 +41,9 @@ const yamlEsmPlugin = {
 // Every file run as its own process. Keep in sync with the spawn sites above.
 const ENTRY_POINTS = [
   "index.ts",
-  // the `openmausbot` command (serve/pair/sessions/status) for the npm
+  // the `agentbot` command (serve/pair/sessions/status) for the npm
   // package, the container image and checkouts; pair-cli.ts stays as an alias
-  "openmausbot.ts",
+  "agentbot.ts",
   "pair-cli.ts",
   // The packaged smoke probe imports this manifest directly. Importing the
   // shared avatar contract widens TypeScript's inferred emit root to the repo,
@@ -93,37 +93,6 @@ await build({
   logLevel: "info",
 });
 
-// `openmausbot serve --tunnel` (server/tunnel.ts) spawns the connector guardian
-// as its own process, so it has to exist as a file beside the server, not only
-// as code inlined into the bundle that imports its neighbours. Bundled under
-// its own name: the same code the desktop app runs from
-// electron/managed-companion-guardian-main.mjs, so a fix lands in both.
-await build({
-  entryPoints: [join(root, "electron", "managed-companion-guardian-main.mjs")],
-  bundle: true,
-  platform: "node",
-  target: "node20",
-  format: "esm",
-  outfile: join(root, "dist-server", "tunnel-guardian.js"),
-  allowOverwrite: true,
-  logLevel: "info",
-});
-
-// `serve --tunnel` downloads cloudflared on first use by running the same
-// pinned-digest script the release build uses, as its own process (it runs
-// itself when executed directly, so it must never be inlined into another
-// entry).
-await build({
-  entryPoints: [join(root, "scripts", "prepare-cloudflared.mjs")],
-  bundle: true,
-  platform: "node",
-  target: "node20",
-  format: "esm",
-  outfile: join(root, "dist-server", "prepare-cloudflared.js"),
-  allowOverwrite: true,
-  logLevel: "info",
-});
-
 // The enterprise layer (enterprise/LICENSE; delete the folder for pure OSS)
 // is loaded by path from <root>/enterprise/server/index.{ts,js}. A package
 // or image has no TypeScript runtime, so ship it bundled; the npm package
@@ -141,7 +110,7 @@ if (existsSync(join(root, "enterprise", "server", "index.ts"))) {
   });
 }
 
-// pi-mcp-extension.ts is NOT an OpenMausBot entry point: it is loaded by the
+// pi-mcp-extension.ts is NOT an Agentbot entry point: it is loaded by the
 // external `pi` process (pi's own jiti), which resolves its
 // @earendil-works/pi-coding-agent and typebox imports from pi's install. Ship
 // it verbatim as .ts so the packaged app has it too — never bundle it, or

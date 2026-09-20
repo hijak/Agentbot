@@ -138,7 +138,7 @@ const computerControlSnapshotSchema = z.object({
   helpReason: z.string().nullable().optional().default(null),
 }).passthrough();
 
-const PANEL_WIDTH_KEY = "omb-computer-panel-width";
+const PANEL_WIDTH_KEY = "agentbot-computer-panel-width";
 const PANEL_MIN_WIDTH = 360;
 const PANEL_MAX_WIDTH = 960;
 const PANEL_DEFAULT_WIDTH = 400;
@@ -298,7 +298,6 @@ export function ComputerPanel({
   const [boxState, setBoxState] = useState<string | null>(null);
   const [polledFrame, setPolledFrame] = useState<{ png: string; mime: string } | null>(null);
   const [previewError, setPreviewError] = useState<Error | string | null>(null);
-  const [previewRefreshing, setPreviewRefreshing] = useState(false);
   const [previewRetry, setPreviewRetry] = useState(0);
   const [vmFrame, setVmFrame] = useState<string | null>(null);
   // The Local VM's interactive noVNC viewer (passworded, autoconnect). The
@@ -768,7 +767,6 @@ export function ComputerPanel({
       latestLive.current.at = Date.now();
       setPolledFrame(live);
       setPreviewError(null);
-      setPreviewRefreshing(false);
     }
   }, [live, cloudPreviewReady]);
 
@@ -780,7 +778,6 @@ export function ComputerPanel({
     let contentionSince: number | null = null;
     const controller = new AbortController();
     setPreviewError(null);
-    setPreviewRefreshing(true);
     const shoot = async () => {
       if (inFlight || controller.signal.aborted) return;
       if (Date.now() - lastAttemptAt < (retryDelay ?? (previewBusy.current ? 4000 : 30_000))) return;
@@ -799,7 +796,6 @@ export function ComputerPanel({
           if (typeof png !== "string" || !png.trim()) throw new LocalizedPanelError("computer.err.emptyFrame");
           setPolledFrame({ png, mime: format === "jpeg" ? "image/jpeg" : "image/png" });
           setPreviewError(null);
-          setPreviewRefreshing(false);
           contentionSince = null;
         }
       } catch (e) {
@@ -811,10 +807,8 @@ export function ComputerPanel({
             contentionSince ??= Date.now();
             const prolonged = Date.now() - contentionSince >= 10_000;
             setPreviewError(prolonged ? e : null);
-            setPreviewRefreshing(!prolonged);
           } else {
             contentionSince = null;
-            setPreviewRefreshing(false);
             setPreviewError(e instanceof Error && e.name === "TimeoutError"
               ? new LocalizedPanelError("computer.err.frameTimeout")
               : e instanceof Error ? e : new LocalizedPanelError("computer.err.screenUnavailable"));
@@ -1125,7 +1119,7 @@ export function ComputerPanel({
   };
 
   const openVmSettings = () => {
-    window.sessionStorage.setItem("openmausbot.settings.section", "computer");
+    window.sessionStorage.setItem("agentbot.settings.section", "computer");
     dispatch({ type: "toggleAppSettings", open: true });
   };
 
@@ -1280,7 +1274,6 @@ export function ComputerPanel({
               src={frameSrc}
               name={bot.name}
               error={panelErrorText(previewError)}
-              refreshing={previewRefreshing}
               retry={previewRetry}
               starting={phase === "starting"}
               opening={pending === "join"}
@@ -1290,7 +1283,6 @@ export function ComputerPanel({
                 latestLive.current.at = 0;
                 if (discardFrame) setPolledFrame(null);
                 setPreviewError(null);
-                setPreviewRefreshing(true);
                 setPreviewRetry((n) => n + 1);
               }}
             />

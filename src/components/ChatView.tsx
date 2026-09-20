@@ -1215,7 +1215,6 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
           <TaskPicker bot={bot} />
           <UsageChip bot={bot} />
           {!remoteClient && <ModelPicker key={bot.threadId} bot={bot} threadId={bot.threadId} />}
-          <CallButton bot={bot} />
           <button
             data-tour="computer"
             onClick={() => dispatch({ type: "toggleComputer" })}
@@ -1239,6 +1238,9 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
           >
             <Bug size={18} />
           </button>}
+          <div className="ml-1 pl-1.5 border-l border-hairline/40">
+            <CallButton bot={bot} />
+          </div>
         </div>
       </div>
 

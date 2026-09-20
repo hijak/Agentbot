@@ -294,9 +294,9 @@ if (process.versions.electron && process.argv.includes(fixtureFlag)) {
   const { createServer } = await import("vite");
   const { default: react } = await import("@vitejs/plugin-react");
   const { default: tailwindcss } = await import("@tailwindcss/vite");
-  const { launchVerificationServer } = await import("./control-omb.ts");
+  const { launchVerificationServer } = await import("./control-agentbot.ts");
   const fixture = await launchVerificationServer();
-  const output = mkdtempSync(join(tmpdir(), "omb-server-connection-"));
+  const output = mkdtempSync(join(tmpdir(), "agentbot-server-connection-"));
   for (const dir of ["home", "user-data"]) mkdirSync(join(output, dir));
   const ui = await createServer({
     configFile: false, root, resolve: { alias: { "@": join(root, "src") } },
@@ -305,7 +305,7 @@ if (process.versions.electron && process.argv.includes(fixtureFlag)) {
       name: "server-connection-fixture",
       resolveId(id) { if (id === "virtual:server-connection") return `\0${id}`; },
       load(id) {
-        if (id === "\0virtual:server-connection") return `import React from 'react'; import { createRoot } from 'react-dom/client'; import { setLocale } from '/src/lib/i18n.ts'; import { StoreProvider } from '/src/state/store.tsx'; import { RemoteComputerSection } from '/src/components/RemoteComputerSection.tsx'; import { ConnectedWorkspacesSettings } from '/src/components/ConnectedWorkspacesSettings.tsx'; import { DesktopWorkspaceSwitcher } from '/src/components/DesktopWorkspaceSwitcher.tsx'; import '/src/styles.css'; setLocale('en'); localStorage.setItem('omb-analytics-opt-out', '1'); const root = createRoot(document.getElementById('root')); if (location.search.includes('app=1')) { document.body.classList.remove('p-4'); import('/src/App.tsx').then(({default: App}) => root.render(React.createElement(App))); } else root.render(React.createElement(StoreProvider, null, location.search.includes('workspaces=1') ? React.createElement('div', { className: 'flex flex-col gap-5 max-w-2xl mx-auto' }, React.createElement(DesktopWorkspaceSwitcher), React.createElement('h1', { className: 'text-lg font-semibold text-ink' }, 'Connected workspaces'), React.createElement(ConnectedWorkspacesSettings)) : React.createElement(RemoteComputerSection)));`;
+        if (id === "\0virtual:server-connection") return `import React from 'react'; import { createRoot } from 'react-dom/client'; import { setLocale } from '/src/lib/i18n.ts'; import { StoreProvider } from '/src/state/store.tsx'; import { RemoteComputerSection } from '/src/components/RemoteComputerSection.tsx'; import { ConnectedWorkspacesSettings } from '/src/components/ConnectedWorkspacesSettings.tsx'; import { DesktopWorkspaceSwitcher } from '/src/components/DesktopWorkspaceSwitcher.tsx'; import '/src/styles.css'; setLocale('en'); localStorage.setItem('agentbot-analytics-opt-out', '1'); const root = createRoot(document.getElementById('root')); if (location.search.includes('app=1')) { document.body.classList.remove('p-4'); import('/src/App.tsx').then(({default: App}) => root.render(React.createElement(App))); } else root.render(React.createElement(StoreProvider, null, location.search.includes('workspaces=1') ? React.createElement('div', { className: 'flex flex-col gap-5 max-w-2xl mx-auto' }, React.createElement(DesktopWorkspaceSwitcher), React.createElement('h1', { className: 'text-lg font-semibold text-ink' }, 'Connected workspaces'), React.createElement(ConnectedWorkspacesSettings)) : React.createElement(RemoteComputerSection)));`;
       },
       configureServer(server) {
         server.middlewares.use((req, res, next) => {

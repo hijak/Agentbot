@@ -1,18 +1,18 @@
-# Self-hosting the OpenMausBot server
+# Self-hosting the Agentbot server
 
 Run the harness server on an always-on Linux box (a VPS, a home server, a
 Mac mini in a closet) and pair browsers, the desktop app, or phones with it.
-The npm CLI supports a managed public tunnel, Tailscale, or your own proxy.
+The npm CLI supports Tailscale, your own domain, or your own proxy.
 
 > **Security first:** the server deliberately trusts only loopback — any
 > process that can reach `127.0.0.1:8799` has full control, including the
 > shell your bots can use. **Never expose that port directly and never bind
 > it to a public interface.** Reach it through an SSH tunnel, a private
 > network you trust, or an authenticated remote path below. Requests through
-> the managed tunnel or a correctly configured proxy require a paired session.
+> a correctly configured proxy require a paired session.
 
-Step by step, for a server you do not have yet: [Deploy OpenMausBot on a
-VPS](deploy-vps.md) walks through the three ways in (public address, own
+Step by step, for a server you do not have yet: [Deploy Agentbot on a
+VPS](deploy-vps.md) walks through the two ways in (own
 domain, Tailscale), signing engines in, pairing, keeping it running,
 updating and backups. This page is the reference behind it.
 
@@ -30,7 +30,7 @@ Runs fully on a server:
 - text-to-speech (with a key), the web UI (the server serves it itself)
 
 - a browser for bots, once the engine is installed on the server
-  (`npx openmausbot browser install`, or nothing to do in the Docker image,
+  (`npx agentbot browser install`, or nothing to do in the Docker image,
   which ships it): each bot gets its own isolated, persistent session.
   Watching it live from the app is the next step (docs/plans/browser-engine.md).
 
@@ -43,7 +43,7 @@ Desktop-only for now (needs the Mac/Linux app):
 On any machine with Node 24 or newer (a VPS, a Mac mini, a Raspberry Pi):
 
 ```sh
-npx openmausbot start
+npx agentbot start
 ```
 
 First launch asks you to choose AI access, connect an account or API key,
@@ -52,55 +52,34 @@ Codex also offers device-code login for SSH. API-key connections currently
 support chat, not agent tools or computer use. The [setup guide](cli-onboarding.md)
 explains the choices, key storage, and how to run setup again safely.
 
-It then starts the server and keeps your data in `~/.openmausbot`. If you
+It then starts the server and keeps your data in `~/.agentbot`. If you
 choose phone access, it prints a pairing link and QR code only after checking
 the HTTPS connection. Choosing **Skip for now** keeps the workspace local-only
-and creates no pairing invitation. Use `npx openmausbot setup` to configure without starting, or
-`npx openmausbot serve` to start non-interactively with your existing config
+and creates no pairing invitation. Use `npx agentbot setup` to configure without starting, or
+`npx agentbot serve` to start non-interactively with your existing config
 (for services and scripts).
 
 The npm package does not include engine CLIs (`claude`, `codex`, …); setup
 can offer to install and sign in supported engines on this machine.
 Run setup, engine authentication, and the server as the same unprivileged
 operating-system user. Engine credentials live in that user's CLI-specific
-directories, not all under `.openmausbot`.
+directories, not all under `.agentbot`.
 
 For a Linux service, the [VPS guide](deploy-vps.md#before-you-start) shows the
 account setup, engine installation, and browser dependency installation.
 After installing browser libraries as administrator, also run
-`npx openmausbot browser install` as the service user so that user's browser
-is present. Three ways to make the server reachable from elsewhere:
+`npx agentbot browser install` as the service user so that user's browser
+is present. Two ways to make the server reachable from elsewhere:
 
 - **On your Tailscale network, no domain needed:**
-  `npx openmausbot serve --tailscale`. Tailscale terminates HTTPS with its
+  `npx agentbot serve --tailscale`. Tailscale terminates HTTPS with its
   own certificate and the link uses this machine's MagicDNS name, so only
-  devices on your tailnet can reach it. Needs Tailscale signed in and HTTPS
-  certificates enabled for the tailnet (admin console → DNS).
-- **A public address, no domain, no proxy, no open port:**
-
-  ```sh
-  npx openmausbot login          # once: an emailed code signs this machine in
-  npx openmausbot serve --tunnel
-  ```
-
-  `login` reserves an address like `https://c-….openmausbot.com` for this
-  machine; `serve --tunnel` connects it through a Cloudflare tunnel (the same
-  one the desktop app uses for its companion) and prints the pairing link at
-  that address. The first run downloads `cloudflared` (pinned version and
-  digest) into the data dir. Only traffic through the tunnel reaches the
-  server, and it still has to pair: the tunnel lands on a separate listener
-  the server treats as "through a proxy", never as the owner. `npx openmausbot
-  logout` releases the address. The account credentials live in
-  `~/.openmausbot/tunnel-account.json` (mode 0600).
-  Starting it from a fleet or a container, where nobody can type an emailed
-  code? Set `OMB_INSTALLATION_CREDENTIAL` to the installation credential the
-  fleet issued and skip `login`: the address and connector token are fetched
-  at every start and nothing is written to disk. A rejected credential stops
-  the start with a clear message rather than serving locally.
+   devices on your tailnet can reach it. Needs Tailscale signed in and HTTPS
+   certificates enabled for the tailnet (admin console → DNS).
 - **Your own domain, still one command:**
 
   ```sh
-  npx openmausbot serve --domain maus.example.com
+  npx agentbot serve --domain maus.example.com
   ```
 
   Point the domain's A record at this machine and open ports 80 and 443.
@@ -109,13 +88,13 @@ is present. Three ways to make the server reachable from elsewhere:
   and renews the certificate from Let's Encrypt. On Linux, binding ports 80
   and 443 as a normal user needs one privilege grant; when Caddy reports the
   refusal, `serve` prints the exact `setcap` command to run once.
-- **Behind your own proxy or domain:** `npx openmausbot serve --public-url
+- **Behind your own proxy or domain:** `npx agentbot serve --public-url
   https://maus.example.com`, with the proxy rules from "Putting a proxy in
   front".
 
-Later: `npx openmausbot pair --label "Kitchen iPad"` for another device
+Later: `npx agentbot pair --label "Kitchen iPad"` for another device
 (`--client` for one that may chat but not change settings), and
-`npx openmausbot sessions` to see or revoke them. `openmausbot serve` is a
+`npx agentbot sessions` to see or revoke them. `agentbot serve` is a
 plain foreground process. For unattended use, follow the
 [systemd example](deploy-vps.md#keep-it-running), which installs a chosen
 release and runs its binary directly. Restarting that service does not
@@ -157,10 +136,10 @@ hostname is shown; providers that already append the DNS zone need only the
 relative name (or `@` at the zone root). Server/proxy instructions are under
 **Advanced server setup**.
 
-The IP comes from this server's network interfaces, never the browser, tunnel
-hostname or an IP-echo service. Only a single unambiguous public IPv4 is shown.
+The IP comes from this server's network interfaces, never the browser
+or an IP-echo service. Only a single unambiguous public IPv4 is shown.
 For containers/NAT or hosts with multiple public addresses, an administrator can
-set `OMB_PUBLIC_IPV4` to the public IPv4 of the HTTPS proxy and restart OMB.
+set `AGENTBOT_PUBLIC_IPV4` to the public IPv4 of the HTTPS proxy and restart OMB.
 This is a display hint, not proof of reachability; verification still checks
 HTTPS and the workspace identity. If the IP is missing or invalid, the UI asks
 for administrator help instead of inventing a DNS value.
@@ -185,9 +164,8 @@ address for **new server pairing links**. Removing it restores that fallback
 address, if any; neither action changes DNS, the proxy, bots, conversations, or
 existing sessions. A different browser origin needs its own pairing, so keep
 your original tab open until the new one works. The setting does not change
-`OMB_WEBHOOK_PUBLIC_URL`, existing webhook URLs, or the desktop companion's
-managed connection. This feature is for self-hosted servers, not the desktop
-app's managed phone endpoint.
+`AGENTBOT_WEBHOOK_PUBLIC_URL` or existing webhook URLs.
+This feature is for self-hosted servers.
 
 ## Docker (with HTTPS on your own domain)
 
@@ -204,13 +182,13 @@ Requirements: Docker with Compose, a DNS name pointing at the machine, and
 ports 80/443 open.
 
 ```sh
-git clone https://github.com/milind-soni/OpenMausBot && cd OpenMausBot/deploy
+git clone https://github.com/milind-soni/Agentbot && cd Agentbot/deploy
 cp .env.example .env            # set DOMAIN
 docker compose pull omb && docker compose up -d
 ```
 
 That uses the image CI publishes on every `main` push
-(`ghcr.io/milind-soni/openmausbot`, tagged `latest`, `sha-…` and `v…`).
+(`ghcr.io/milind-soni/agentbot`, tagged `latest`, `sha-…` and `v…`).
 To build from your checkout instead: `docker compose up -d --build`.
 
 Then sign the engine CLIs in **inside the container** (their logins live on
@@ -219,14 +197,14 @@ pairing code for your first device:
 
 ```sh
 docker compose exec omb claude                       # each CLI you listed in ENGINES
-docker compose exec omb node dist-server/openmausbot.js pair # prints a code, a link and a QR
+docker compose exec omb node dist-server/agentbot.js pair # prints a code, a link and a QR
 ```
 
 Open the link (`https://<DOMAIN>/pair#code=…`) in a browser and it is
 paired; see "Using it from your computer" for what a session is. Webhook
 URLs (`https://<DOMAIN>/hooks/wh_…`) work without a session, and that is the
 base the app prints on new hooks because the stack sets
-`OMB_WEBHOOK_PUBLIC_URL`.
+`AGENTBOT_WEBHOOK_PUBLIC_URL`.
 
 What the stack does, so you can adapt it:
 
@@ -252,27 +230,27 @@ Requirements: Node 24+, pnpm, and at least one agent CLI installed and
 signed in on the server.
 
 ```sh
-git clone https://github.com/milind-soni/OpenMausBot && cd OpenMausBot
+git clone https://github.com/milind-soni/Agentbot && cd Agentbot
 pnpm install
 
 # choose where data lives and start the server
-OMB_DATA_DIR="$HOME/.openmausbot" OMB_PORT=8799 \
+AGENTBOT_DATA_DIR="$HOME/.agentbot" AGENTBOT_PORT=8799 \
   node --experimental-strip-types server/index.ts
 ```
 
 For something durable, let the CLI write the service for you:
 
 ```sh
-npx openmausbot service install --domain maus.example.com   # or --tunnel, --tailscale, or nothing
+npx agentbot service install --domain maus.example.com   # or --tailscale, or nothing
 ```
 
 It renders a systemd unit (Linux) or a launchd agent (macOS) that runs the
-same `openmausbot serve …` with your options, restarts it if it stops, and,
+same `agentbot serve …` with your options, restarts it if it stops, and,
 for `--domain`, grants the unit the capability to bind ports 80 and 443
 without root. The file is written next to your data and the two commands
 that install and start it are printed (they need `sudo` on Linux).
-`openmausbot service uninstall` prints the reverse. Install the package
-permanently first (`npm install -g openmausbot`): a service must not point
+`agentbot service uninstall` prints the reverse. Install the package
+permanently first (`npm install -g agentbot`): a service must not point
 at an `npx` cache that npm may prune.
 
 Engine CLIs read their logins from the service user's home: sign them in
@@ -302,7 +280,7 @@ that makes one read-only request to the provider from the server.
   to sign in, and Settings → Engines shows "workspace API key" instead of a
   person. Remove the key to go back to personal logins. The server's own
   `ANTHROPIC_API_KEY` environment variable is deliberately ignored; use the
-  page, `config.json`, or `OMB_ANTHROPIC_API_KEY`.
+  page, `config.json`, or `AGENTBOT_ANTHROPIC_API_KEY`.
 - **OpenAI-compatible API key and base URL**: OpenRouter by default, or Groq,
   Together, a gateway, or `https://api.openai.com/v1` for OpenAI itself. This
   powers the OpenAI-compatible engine. Codex has no key path by design and
@@ -311,8 +289,8 @@ that makes one read-only request to the provider from the server.
 
 ## Many client workspaces on one server
 
-`openmausbot fleet` runs one workspace per client on a single Linux server,
-each as its own OS user, its own `openmausbot@<name>` service on its own
+`agentbot fleet` runs one workspace per client on a single Linux server,
+each as its own OS user, its own `agentbot@<name>` service on its own
 loopback ports, its own data folder, brand, sign-in list and provider key,
 reached at `<name>.<your domain>` through the system Caddy. Bots of one
 workspace cannot read another's files or reach its API: the data lives in a
@@ -324,22 +302,22 @@ Once, as root, with the package installed permanently and a wildcard DNS
 record (`*.example.com`) pointing at the server:
 
 ```sh
-openmausbot fleet init --domain example.com
+agentbot fleet init --domain example.com
 ```
 
 That writes the template unit, the fence and its unit, the workspace folders,
-and adds `import /etc/caddy/omb.d/*.caddy` to `/etc/caddy/Caddyfile`. Then per
+and adds `import /etc/caddy/agentbot.d/*.caddy` to `/etc/caddy/Caddyfile`. Then per
 client:
 
 ```sh
-openmausbot fleet create acme --admin owner@acme.test --member @acme.test \
+agentbot fleet create acme --admin owner@acme.test --member @acme.test \
   --brand /root/acme-brand.json --anthropic-key-file /root/acme-anthropic.key \
   --cap 50 --memory 1G
-openmausbot fleet users acme add bob@acme.test --chat-only
-openmausbot fleet list
-openmausbot fleet suspend acme      # 503 page, service stopped; resume undoes it
-openmausbot fleet upgrade           # new release, then every running workspace restarted in turn
-openmausbot fleet delete acme --yes # add --keep-data to keep the home folder
+agentbot fleet users acme add bob@acme.test --chat-only
+agentbot fleet list
+agentbot fleet suspend acme      # 503 page, service stopped; resume undoes it
+agentbot fleet upgrade           # new release, then every running workspace restarted in turn
+agentbot fleet delete acme --yes # add --keep-data to keep the home folder
 ```
 
 Give `init` `--operator USER` (the Unix user your own workspace runs as; the
@@ -348,10 +326,10 @@ root service on a Unix socket only that user may open. Your workspace then
 shows **Settings → Workspaces** (with the enterprise `admin` feature): create
 a workspace, add or remove who may sign in, suspend, resume, delete, upgrade
 all, and see each one's spend this month. Every action goes through the
-agent's audit log at `/var/log/openmausbot/fleet.jsonl`.
+agent's audit log at `/var/log/agentbot/fleet.jsonl`.
 
 `https://acme.example.com` is up when `create` returns; the first admin signs
-in with an emailed code. `OMB_LICENSE_KEY` in the environment (or
+in with an emailed code. `AGENTBOT_LICENSE_KEY` in the environment (or
 `--license-key`) is carried into every workspace so a partner's white-label
 key covers them all. Not root? Every command prints the exact steps to run as
 root instead, and `--dry-run` always prints.
@@ -381,13 +359,13 @@ Pair once, then use the server from any browser on any machine that can
 reach it. On the server:
 
 ```sh
-npx openmausbot pair                         # npm install
+npx agentbot pair                         # npm install
 pnpm omb pair                                # from a checkout
-docker compose exec omb node dist-server/openmausbot.js pair   # Docker
+docker compose exec omb node dist-server/agentbot.js pair   # Docker
 ```
 
 It prints a 12-character code (single use, five minutes) and, when the
-server knows its public address (`OMB_PUBLIC_URL`, set by the Docker stack),
+server knows its public address (`AGENTBOT_PUBLIC_URL`, set by the Docker stack),
 a link like `https://maus.example.com/pair#code=XXXX-XXXX-XXXX`. Open the
 link, or open `/pair` on the address you use and type the code. The browser
 gets a session cookie (30 days, renewed on use up to 180 days from pairing, revocable) and the app loads. Sessions are
@@ -396,9 +374,9 @@ screen follows.
 
 From the **desktop app**, use the workspace dropdown above Search → **Connect
 hosted workspace…**, or **Settings → Connected workspaces**. Enter the server's
-HTTPS address or full pairing link, with an optional name. Custom domains and
-Cloudflare tunnel addresses work; Tailscale is not required. Generate a fresh
-link for each device: `npx openmausbot pair --label "My desktop"` creates an
+HTTPS address or full pairing link, with an optional name. Custom domains
+work; Tailscale is not required. Generate a fresh
+link for each device: `npx agentbot pair --label "My desktop"` creates an
 owner link without the phone wizard; add `--client` for chat-only access.
 A code already used by your phone cannot also pair your desktop.
 
@@ -443,7 +421,7 @@ and take a 5-minute ticket from `POST /api/auth/stream-ticket` for the
 event stream, because `EventSource` cannot set headers:
 `GET /api/events?ticket=…`.
 
-`GET /.well-known/openmausbot/environment` is public and tells a client what
+`GET /.well-known/agentbot/environment` is public and tells a client what
 it is talking to: a stable `environmentId`, the label, the version and
 capabilities. Saved connections check the id so a reused address that now
 points at a different server is refused loudly.
@@ -463,8 +441,8 @@ people use every day, let them sign in with an emailed code instead: set an
 allow-list, and `/pair` on your server offers "Sign in with your email" first.
 
 ```sh
-OMB_SIGNIN_EMAILS="her@yourcompany.com, @yourcompany.com"   # full access
-OMB_SIGNIN_MEMBER_EMAILS="freelancer@example.com"          # chat and approvals only
+AGENTBOT_SIGNIN_EMAILS="her@yourcompany.com, @yourcompany.com"   # full access
+AGENTBOT_SIGNIN_MEMBER_EMAILS="freelancer@example.com"          # chat and approvals only
 ```
 
 Signed in as an admin? Settings → Remote access → **Who can sign in with an
@@ -473,25 +451,25 @@ npm package, the same thing from the command line, with the server running
 or not, no restart needed:
 
 ```sh
-npx openmausbot access add her@yourcompany.com
-npx openmausbot access add freelancer@example.com --chat-only
-npx openmausbot access list
+npx agentbot access add her@yourcompany.com
+npx agentbot access add freelancer@example.com --chat-only
+npx agentbot access list
 ```
 
 An entry is an address or `@domain` (everyone at that domain). Admins get
-the same access as a pairing code from `openmausbot serve`; members get the
-chat-only scope, the same as `openmausbot pair --client`. The same lists live
+the same access as a pairing code from `agentbot serve`; members get the
+chat-only scope, the same as `agentbot pair --client`. The same lists live
 in `config.json` under `signIn.admins` and `signIn.members` and can be changed
 through the settings API without a restart; the environment variables win
 when set, which is how a container or a service unit is bootstrapped.
 
-The code itself comes from `accounts.openmausbot.com`, the OpenMausBot
+The code itself comes from `accounts.agentbot.com`, the Agentbot
 account service, so your server needs no email credentials. Your server asks
 it to send the code, checks the answer, and then issues its own session
 cookie: the browser only ever talks to your server, and who is welcome is
 decided only by your allow-list. Wrong codes count against the same lockout
 as pairing codes. Sessions from a sign-in show the email in
-`openmausbot sessions` and can be revoked the same way.
+`agentbot sessions` and can be revoked the same way.
 
 ### Inviting people
 
@@ -521,8 +499,8 @@ Any reverse proxy works, given three things:
 3. **Do not buffer** the event stream (`flush_interval -1` in Caddy,
    `proxy_buffering off` in nginx); the UI streams events over SSE.
 
-Plus one convenience: set `OMB_PUBLIC_URL=https://your.domain` so pairing
-links, and `OMB_WEBHOOK_PUBLIC_URL=https://your.domain` so hook URLs, are
+Plus one convenience: set `AGENTBOT_PUBLIC_URL=https://your.domain` so pairing
+links, and `AGENTBOT_WEBHOOK_PUBLIC_URL=https://your.domain` so hook URLs, are
 printed with the public address. [`deploy/Caddyfile`](../deploy/Caddyfile)
 is the reference implementation.
 
@@ -534,22 +512,22 @@ creates a one-time code with a QR right in the browser, and lists every
 paired device with a sign-out button. Nobody needs the command line.
 
 The iOS app pairs with a server the same way a laptop does: scan the QR
-code that `openmausbot serve` (or `openmausbot pair`) prints, paste the
+code that `agentbot serve` (or `agentbot pair`) prints, paste the
 whole `https://host/pair#code=…` link into the address field on the pairing
 screen, or type the address and then the code. The phone gets a session of
-its own, listed and revocable with `openmausbot sessions`. What it may do is
-the code's scope: a code from `openmausbot pair` carries `admin` and the app
-shows everything; a code from `openmausbot pair --client` (also what the
+its own, listed and revocable with `agentbot sessions`. What it may do is
+the code's scope: a code from `agentbot pair` carries `admin` and the app
+shows everything; a code from `agentbot pair --client` (also what the
 guided phone setup mints) can chat, approve and read, and the app hides
 creating bots and sections, changing models, generating avatars, connecting
 apps and cloud desktops — those stay with the owner. A server reinstalled at
 the same address has a new identity; the app then asks to pair again rather
 than present the old session to it.
 
-Both native apps pair this way. `openmausbot pair --phone android` prints the
+Both native apps pair this way. `agentbot pair --phone android` prints the
 app-scheme QR that Android's scanner needs, and the iOS app accepts either
 that QR or the web link. Pass `--phone` whenever nothing is watching the
-terminal, such as `docker compose exec omb node dist-server/openmausbot.js
+terminal, such as `docker compose exec omb node dist-server/agentbot.js
 pair --phone android --public-url https://your-domain`, since a scripted run
 never reaches the question the interactive command asks. Nothing extra to install, and the phone becomes a
 session like any other.
@@ -557,7 +535,7 @@ session like any other.
 Older way, still supported, and only useful on a LAN or a tailnet: run the
 companion sidecar next to the harness and pair by its own QR. It advertises
 on your private networks (Tailscale-aware) and issues its own per-device
-credentials, which are **not** `openmausbot sessions` and are revoked from
+credentials, which are **not** `agentbot sessions` and are revoked from
 its own page on `127.0.0.1:8811`. It also serves phones over cleartext HTTP
 on port 8810, so do not expose it from a public server. It ships only in a
 git checkout: neither the npm package nor the Docker image contains it.
@@ -606,12 +584,12 @@ plain settings in `config.json` (`budgets`, `billing`) and through
 
 For the npm service, [install the chosen new version](deploy-vps.md#update)
 as the service user while the server is stopped, then start it again.
-For a foreground invocation, `npx --yes openmausbot@X.Y.Z serve --tunnel`
+For a foreground invocation, `npx --yes agentbot@X.Y.Z serve --tailscale`
 selects a particular published release; replace `X.Y.Z` with that version.
 
 ```sh
 docker compose -f deploy/docker-compose.yml pull omb && docker compose -f deploy/docker-compose.yml up -d   # Docker
-git pull && pnpm install && sudo systemctl restart openmausbot          # from source
+git pull && pnpm install && sudo systemctl restart agentbot          # from source
 ```
 
 Routines and queued work survive restarts; in-flight turns do not, so

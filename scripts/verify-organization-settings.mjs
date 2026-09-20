@@ -61,7 +61,7 @@ if (process.versions.electron && process.argv.includes(flag)) {
       assert.equal(message.connection.token, modelToken, "native provider gets model-only capability");
       grantsApplied++;
     } else clearsApplied++;
-    queueMicrotask(() => relay.receive(fakeProcess, { type: "openmausbot:managed-desktop-result", requestId: message.requestId, ok: true }));
+    queueMicrotask(() => relay.receive(fakeProcess, { type: "agentbot:managed-desktop-result", requestId: message.requestId, ok: true }));
   } };
   const client = createManagedDesktopClient({
     store: { read: async () => saved, write: async value => { saved = structuredClone(value); } },
@@ -184,7 +184,7 @@ if (process.versions.electron && process.argv.includes(flag)) {
     const beginsBeforeApp = begins;
     win.setSize(1180, 850);
     await win.loadURL(`${url}?app=1`);
-    await until(() => evaluate("document.body.textContent.includes('Welcome to OpenMausBot')"), "normal optional welcome flow");
+    await until(() => evaluate("document.body.textContent.includes('Welcome to Agentbot')"), "normal optional welcome flow");
     assert.equal(await evaluate(`Boolean(${button("Sign in with your organisation")})`), false);
     assert.equal(begins, beginsBeforeApp);
     win.webContents.send("app:open-settings");
@@ -205,9 +205,9 @@ if (process.versions.electron && process.argv.includes(flag)) {
   const { createServer } = await import("vite");
   const { default: react } = await import("@vitejs/plugin-react");
   const { default: tailwindcss } = await import("@tailwindcss/vite");
-  const { launchVerificationServer } = await import("./control-omb.ts");
+  const { launchVerificationServer } = await import("./control-agentbot.ts");
   const fixture = await launchVerificationServer();
-  const output = mkdtempSync(join(tmpdir(), "omb-organization-ui-"));
+  const output = mkdtempSync(join(tmpdir(), "agentbot-organization-ui-"));
   for (const name of ["home", "user-data"]) mkdirSync(join(output, name));
   const ui = await createServer({ configFile: false, root, resolve: { alias: { "@": join(root, "src") } },
     define: { __APP_VERSION__: JSON.stringify("fixture") },
@@ -215,7 +215,7 @@ if (process.versions.electron && process.argv.includes(flag)) {
     plugins: [react(), tailwindcss(), {
       name: "organization-fixture",
       resolveId(id) { if (id === "virtual:organization-fixture") return `\0${id}`; },
-      load(id) { if (id === "\0virtual:organization-fixture") return `import React from 'react'; import { createRoot } from 'react-dom/client'; import { OrganizationSettings } from '/src/components/OrganizationSettings.tsx'; import { setLocale } from '/src/lib/i18n.ts'; import { StoreProvider } from '/src/state/store.tsx'; import { BotProfileAvatarCard } from '/src/components/BotProfileAvatarCard.tsx'; import { OrganizationIdentity } from '/src/components/OrganizationIdentity.tsx'; import '/src/styles.css'; setLocale('en'); localStorage.setItem('omb-analytics-opt-out','1'); const root = createRoot(document.getElementById('root')); if(location.search.includes('app=1')) { document.body.classList.remove('p-4'); import('/src/App.tsx').then(({default: App}) => root.render(React.createElement(App))); } else if(location.search.includes('branding=1')) { function Fixture() { const [bot, setBot] = React.useState({ id:'fixture-avatar', name:'Studio bot', color:'green', mascotBody:'cursor', avatarCrop:'mascot', messages:[] }); window.fixtureBot = bot; return React.createElement(StoreProvider, null, React.createElement('main', {className:'mx-auto flex max-w-xl flex-col gap-4'}, React.createElement(OrganizationIdentity), React.createElement(OrganizationSettings), React.createElement(BotProfileAvatarCard, {bot, activeState:'idle', mascotMotion:null, onPatch: patch => setBot(b => ({...b,...patch}))}))); } root.render(React.createElement(Fixture)); } else root.render(React.createElement('main',{className:'mx-auto flex max-w-xl flex-col gap-4'},React.createElement(OrganizationSettings)));`; },
+      load(id) { if (id === "\0virtual:organization-fixture") return `import React from 'react'; import { createRoot } from 'react-dom/client'; import { OrganizationSettings } from '/src/components/OrganizationSettings.tsx'; import { setLocale } from '/src/lib/i18n.ts'; import { StoreProvider } from '/src/state/store.tsx'; import { BotProfileAvatarCard } from '/src/components/BotProfileAvatarCard.tsx'; import { OrganizationIdentity } from '/src/components/OrganizationIdentity.tsx'; import '/src/styles.css'; setLocale('en'); localStorage.setItem('agentbot-analytics-opt-out','1'); const root = createRoot(document.getElementById('root')); if(location.search.includes('app=1')) { document.body.classList.remove('p-4'); import('/src/App.tsx').then(({default: App}) => root.render(React.createElement(App))); } else if(location.search.includes('branding=1')) { function Fixture() { const [bot, setBot] = React.useState({ id:'fixture-avatar', name:'Studio bot', color:'green', mascotBody:'cursor', avatarCrop:'mascot', messages:[] }); window.fixtureBot = bot; return React.createElement(StoreProvider, null, React.createElement('main', {className:'mx-auto flex max-w-xl flex-col gap-4'}, React.createElement(OrganizationIdentity), React.createElement(OrganizationSettings), React.createElement(BotProfileAvatarCard, {bot, activeState:'idle', mascotMotion:null, onPatch: patch => setBot(b => ({...b,...patch}))}))); } root.render(React.createElement(Fixture)); } else root.render(React.createElement('main',{className:'mx-auto flex max-w-xl flex-col gap-4'},React.createElement(OrganizationSettings)));`; },
       configureServer(server) { server.middlewares.use((req, res, next) => {
         if (req.url?.split("?")[0] !== "/__organization.html") return next();
         void server.transformIndexHtml(req.url, '<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>Isolated Organisation Settings</title></head><body class="bg-app p-4"><div id="root"></div><script type="module" src="/@id/virtual:organization-fixture"></script></body></html>')

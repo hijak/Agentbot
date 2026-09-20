@@ -15,6 +15,7 @@
 // server-computed approval key.
 
 import { localSystemVoiceActive, remoteSystemVoice, resolveLocalSystemVoice } from "@/lib/local-voice";
+import { isJaxVoice, speakJaxUtterance, stopJaxAudio } from "./jax-tts";
 
 export type SpeechStatus = "idle" | "preparing" | "speaking";
 
@@ -26,6 +27,10 @@ export interface SpeechSnapshot {
   /** the utterance currently audible — call mode shows it as a caption */
   caption?: string;
   error?: string;
+  /** progress percentage when downloading weights on first call (0 - 100) */
+  downloadProgress?: number;
+  /** human-readable download/initialization status string */
+  downloadStatus?: string;
 }
 
 interface SpeakOptions {
@@ -34,7 +39,13 @@ interface SpeakOptions {
   messageId?: string;
 }
 
-type TtsPrepareBody = { ready?: boolean; utterances?: string[]; error?: string };
+type TtsPrepareBody = {
+  ready?: boolean;
+  utterances?: string[];
+  error?: string;
+  provider?: string;
+  voice?: string;
+};
 type TtsErrorBody = { error?: string };
 
 const IDLE: SpeechSnapshot = { status: "idle" };
@@ -79,6 +90,7 @@ export class Speaker {
     this.settleLocalSpeech?.(false);
     this.settleLocalSpeech = null;
     this.localUtterance = null;
+    stopJaxAudio();
     if (typeof window !== "undefined") window.speechSynthesis?.cancel();
     // Pausing/removing an <audio> source does not reliably fire `ended` or
     // `error`. Resolve the play promise ourselves so every interrupted
@@ -118,20 +130,29 @@ export class Speaker {
       if (this.request === controller) this.request = null;
       return;
     }
-    let utterances: string[];
+    let prep: { utterances: string[]; provider?: string; defaultVoice?: string };
     try {
-      utterances = await this.prepare(text, opts.voiceId, controller.signal);
+      prep = await this.prepare(text, opts.voiceId, controller.signal);
     } catch (e) {
       if (live()) this.set({ ...IDLE, error: e instanceof Error ? e.message : String(e) });
       if (this.request === controller) this.request = null;
       return;
     }
     if (!live()) return;
-    if (!utterances.length) {
+    if (!prep.utterances.length) {
       this.set(IDLE);
       if (this.request === controller) this.request = null;
       return;
     }
+
+    if (prep.provider === "jax-js" || isJaxVoice(opts.voiceId)) {
+      const effectiveVoice = opts.voiceId || prep.defaultVoice || "azelma";
+      await this.speakWithJaxJs(prep.utterances, effectiveVoice, opts, live, controller.signal);
+      if (this.request === controller) this.request = null;
+      return;
+    }
+
+    const utterances = prep.utterances;
 
     // Prefetch: request utterance n+1 while n is audible. This is what buys
     // responsiveness without holding a streaming socket open for the whole
@@ -225,7 +246,11 @@ export class Speaker {
     });
   }
 
-  private async prepare(text: string, voiceId: string | undefined, signal: AbortSignal): Promise<string[]> {
+  private async prepare(
+    text: string,
+    voiceId: string | undefined,
+    signal: AbortSignal,
+  ): Promise<{ utterances: string[]; provider?: string; defaultVoice?: string }> {
     const res = await fetch("/api/tts/prepare", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -237,7 +262,83 @@ export class Speaker {
     if (!body.ready) {
       throw new Error("Set up a voice provider in an agent profile on this computer, then pick a voice for the agent.");
     }
-    return body.utterances ?? [];
+    return {
+      utterances: body.utterances ?? [],
+      provider: body.provider,
+      defaultVoice: body.voice,
+    };
+  }
+
+  private async speakWithJaxJs(
+    utterances: string[],
+    voice: string,
+    opts: SpeakOptions,
+    live: () => boolean,
+    signal: AbortSignal,
+  ): Promise<void> {
+    try {
+      for (let i = 0; i < utterances.length; i += 1) {
+        if (!live() || signal.aborted) return;
+        const utterance = utterances[i];
+
+        await speakJaxUtterance(utterance, {
+          voice,
+          signal,
+          onProgress: (p) => {
+            if (!live()) return;
+            if (p.phase === "downloading") {
+              this.set({
+                status: "preparing",
+                botId: opts.botId,
+                messageId: opts.messageId,
+                downloadProgress: p.percent ?? 0,
+                downloadStatus:
+                  p.percent !== undefined
+                    ? `Downloading voice model: ${p.percent}%`
+                    : "Downloading voice model...",
+              });
+            } else if (p.phase === "initializing") {
+              this.set({
+                status: "preparing",
+                botId: opts.botId,
+                messageId: opts.messageId,
+                downloadProgress: 100,
+                downloadStatus: `Initializing neural audio (${p.device || "GPU"})...`,
+              });
+            } else if (p.phase === "generating") {
+              this.set({
+                status: "speaking",
+                botId: opts.botId,
+                messageId: opts.messageId,
+                caption: utterance,
+                downloadProgress: undefined,
+                downloadStatus: undefined,
+              });
+            }
+          },
+          onCaption: (caption) => {
+            if (live()) {
+              this.set({
+                status: "speaking",
+                botId: opts.botId,
+                messageId: opts.messageId,
+                caption,
+              });
+            }
+          },
+        });
+      }
+    } catch (e) {
+      if (live() && !signal.aborted) {
+        this.set({
+          ...IDLE,
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+      return;
+    }
+
+    if (live()) this.set(IDLE);
   }
 
   private async render(text: string, voiceId: string | undefined, signal: AbortSignal): Promise<Blob> {

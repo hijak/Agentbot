@@ -1,8 +1,7 @@
-# OpenMausBot control plane
+# Agentbot control plane
 
-This directory is an isolated Cloudflare Worker for cloud account identity,
-installation ownership, and per-installation managed companion endpoints. It
-does **not** store or move local bots, chats, desktop SQLite state, prompts, or
+This directory is an isolated Cloudflare Worker for cloud account identity
+and installation ownership. It does **not** store or move local bots, chats, desktop SQLite state, prompts, or
 tool output.
 
 ## What is included
@@ -17,11 +16,10 @@ tool output.
   installation credentials, or vice versa.
 - Exact-origin CORS, bounded JSON bodies, redacted errors, and `no-store` on
   every response.
-- One remotely managed Cloudflare Tunnel per installation. Its opaque public
-  hostname routes to the Electron-owned gateway at `http://127.0.0.1:8812`
-  (never the reusable LAN listener on `8810`) and is followed by a mandatory
-  `http_status:404` catch-all. A proxied CNAME points to
-  `<tunnel-id>.cfargotunnel.com`.
+- No managed-tunnel provisioning: the per-installation remotely managed
+  endpoint surface has been removed. Reach a server over Tailscale
+  (`serve --tailscale`), an own domain (`serve --domain`), or a
+  reverse proxy (`serve --public-url`) instead.
 - D1-backed generation/lease claims, recovery by stable opaque tunnel name, and
   retryable partial cleanup. Cloudflare API credentials and raw connector
   tokens are never written to D1 or logs.
@@ -48,7 +46,6 @@ would make operator cleanup impossible.
 | `POST` | `/v1/installations/:id/credentials/rotate` | owning account bearer |
 | `DELETE` | `/v1/installations/:id` | owning account bearer |
 | `GET` | `/v1/installations/self` | installation credential |
-| `GET`, `POST`, `DELETE` | `/v1/installations/self/endpoint` | installation credential |
 
 Installation registration requires a stable `clientInstanceId`, a display
 `name`, and a `platform` of `darwin`, `windows`, or `linux`; `appVersion` is
@@ -67,58 +64,27 @@ expired credentials and records both credential use and installation
 `lastSeenAt`. Rotations are serialized with a one-minute cooldown, so concurrent
 requests cannot both return credentials while one invalidates the other.
 
-### Managed endpoint contract
+### Managed endpoints (removed)
 
-All three endpoint methods require `Authorization: Bearer <omb_install_…>`.
-Account bearer tokens are rejected.
+The `GET`, `POST`, and `DELETE /v1/installations/self/endpoint` methods and
+their tunnel/DNS provisioning once reserved one remotely managed endpoint
+per installation. That surface has been removed: no new tunnel or DNS
+resources are provisioned, and servers are reached over Tailscale, an own
+domain, or a reverse proxy instead. The notes below are preserved as the
+historical contract and do not describe an offered API.
 
-- `GET` returns `{ "endpoint": null }` before allocation or after deletion.
-  Otherwise it returns the HTTPS URL, hostname, lifecycle status, generation,
-  timestamps, and a redacted `lastErrorCode`. It never returns a connector
+- `GET` returned `{ "endpoint": null }` before allocation or after deletion.
+  Otherwise it returned the HTTPS URL, hostname, lifecycle status, generation,
+  timestamps, and a redacted `lastErrorCode`. It never returned a connector
   token.
-- `POST` has no required body. It idempotently reserves or reconciles the
-  endpoint, adopts a tunnel/DNS record created by an interrupted earlier run,
-  and returns `{ endpoint, connectorToken }`. The raw token is obtained only
-  after tunnel configuration and DNS are ready. The caller must place it
-  directly in the operating system's secure credential store; it is not
-  recoverable from GET or D1.
-- `DELETE` removes DNS first and then the tunnel. It returns `204` when done or
-  when already deleted. A partial Cloudflare failure returns
-  `503 endpoint_cleanup_pending` and retains only the IDs needed for a retry.
-  A concurrent mutation returns `409 endpoint_busy` with `Retry-After: 2`.
+- `POST` had no required body. It idempotently reserved or reconciled the
+  endpoint and returned `{ endpoint, connectorToken }`.
+- `DELETE` removed DNS first and then the tunnel, returning `204` when done or
+  when already deleted.
 
-Hostnames have exactly one opaque label in front of the configured suffix:
-`c-<32-lowercase-hex>.<COMPANION_HOST_SUFFIX>`. Set the suffix to a zone name
-covered by the zone's edge certificate (normally the zone apex) so the endpoint
-does not depend on deep-subdomain TLS coverage. Tunnel names are stable opaque
-identifiers and contain no account email, display name, or client-supplied ID.
-
-Endpoint provisioning is limited to 20 attempts per installation per hour;
-deletion is limited to 30. A 60-second D1 lease and monotonically increasing
-generation serialize concurrent requests. The owner renews and fences that
-lease before every provider call, so an expired request cannot roll back a
-resource adopted by its successor. Cloudflare calls have a five-second
-per-request timeout, reject redirects, bound response bodies, and validate the
-response shape before persisting an ID. Ambiguous create/update responses are
-reconciled by the stable tunnel name and exact DNS identity. Before any
-destructive cleanup, both stored IDs and provider-side names/targets are
-revalidated; a renamed or repurposed resource is retained for an operator
-instead of being guessed at. A newly created partial resource is rolled back;
-an adopted resource is never deleted by a failed reconciliation.
-
-Revoking an installation first revokes its local installation credentials, then
-schedules best-effort endpoint cleanup. Cloud cleanup failure cannot restore or
-delay credential revocation. Repeating the owner-scoped installation DELETE is
-safe and retries retained cleanup state. A five-minute cron also processes at
-most four expired-lease rows per run when they are already deleting, belong to
-a revoked installation, or outlive a hard-deleted installation. The four-row
-bound leaves the worst-case 40 external provider calls below the Workers Free
-plan's 50-subrequest ceiling. Failed scheduled cleanups back off from five
-minutes through 15 minutes, one hour, six hours, and then 24 hours. Once a
-deletion has been pending for 24 hours, each eligible sweep emits a distinct
-aggregate operator-attention log without installation or account identifiers.
-This bounded sweep prevents a transient provider failure from orphaning
-resources forever without creating an unbounded scheduled invocation.
+Hostnames had exactly one opaque label in front of the configured suffix.
+Endpoint provisioning was lease-serialized per installation with bounded
+retries and scheduled cleanup of expired leases.
 
 ## Local checks
 
@@ -136,8 +102,8 @@ non-production scoped `CLOUDFLARE_API_TOKEN`, apply the migrations locally, and
 start Wrangler:
 
 ```sh
-pnpm --filter @openmausbot/control-plane exec wrangler d1 migrations apply DB --local --config wrangler.jsonc
-pnpm --filter @openmausbot/control-plane exec wrangler dev --config wrangler.jsonc
+pnpm --filter @agentbot/control-plane exec wrangler d1 migrations apply DB --local --config wrangler.jsonc
+pnpm --filter @agentbot/control-plane exec wrangler dev --config wrangler.jsonc
 ```
 
 Do not commit `.dev.vars`.
@@ -161,26 +127,12 @@ Before a production deployment, an operator must:
    deployment identity access to the binding. The Cloudflare session used while
    preparing this code could not list Email Sending (`2036 Unauthorized`), so no
    domain or binding activation was attempted.
-5. Create a least-privilege Cloudflare API token scoped to the selected account
-   and zone. It needs a Cloudflare Tunnel/`cloudflared` connector **Write**
-   permission plus DNS **Read** and **Write** for that zone. Set
-   `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_ZONE_ID`, and add the token through
-   `wrangler secret put CLOUDFLARE_API_TOKEN`. Never put the token in `vars`,
-   `.dev.vars.example`, logs, or CI output.
-6. Set `COMPANION_HOST_SUFFIX` to the certificate-covered DNS suffix where
-   opaque `c-*` records may be created. The configured zone must contain that
-   suffix. This change does not create the zone, certificate, or any remote
-   tunnel/DNS resources during build or tests.
-7. Replace `ALLOWED_ORIGINS` with a comma-separated allow-list of exact HTTPS
+5. Replace `ALLOWED_ORIGINS` with a comma-separated allow-list of exact HTTPS
    application origins. Wildcards are deliberately unsupported.
-8. Deploy the Worker and verify that `GET <BETTER_AUTH_URL>/healthz` returns
-   exactly `{ "ok": true, "service": "openmausbot-control-plane" }` over
-   HTTPS before shipping the desktop build. Electron probes this endpoint and
-   keeps new hosted onboarding hidden until it is healthy; an already signed-in
-   user remains visible so cleanup and recovery are not stranded.
+6. Deploy the Worker and verify that `GET <BETTER_AUTH_URL>/healthz` returns
+   exactly `{ "ok": true, "service": "agentbot-control-plane" }` over
+   HTTPS before shipping the desktop build.
 
-The control-plane API token is never handed to a desktop. A desktop receives
-only its tunnel connector token, which can run that one remotely managed tunnel.
-The public companion service still enforces its own pairing and application
-authentication; the tunnel is transport, not user authentication. This control
-plane does not collect marketing consent.
+The control-plane API token is never handed to a desktop. The public companion
+service still enforces its own pairing and application authentication. This
+control plane does not collect marketing consent.

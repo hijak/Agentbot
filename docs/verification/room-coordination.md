@@ -76,7 +76,7 @@ pnpm exec vitest run server/room-recovery.e2e.test.ts server/testing/room-handof
 pnpm exec vitest run server/direct-coordination.e2e.test.ts --maxWorkers=1
 pnpm exec vitest run server/turn-dispatch-guard.test.ts
 pnpm exec vitest run server/comms.test.ts server/thread-aware-bots.e2e.test.ts server/routine-delegation.e2e.test.ts server/independent-threads-api.test.ts server/peer-allowlist.e2e.test.ts server/steer-queue.test.ts
-OMB_UI_E2E=1 pnpm exec vitest run scripts/testing/direct-coordination-ui.e2e.test.ts
+AGENTBOT_UI_E2E=1 pnpm exec vitest run scripts/testing/direct-coordination-ui.e2e.test.ts
 ```
 
 The integration suite launches the disposable control fixture and drives the
@@ -134,7 +134,7 @@ routine back to a normal user conversation.
 
 Use an isolated home and data directory, never the running app. Create Maya,
 Eli (developer) and Nora (reviewer), set an explicit shared working folder, and
-create Launch and Delivery rooms through `control-omb`. Send through
+create Launch and Delivery rooms through `control-agentbot`. Send through
 `send-channel`, wait on the source channel, and retain `messages` plus the
 actual files and executed tool evidence. Follow [channels](channels.md) and
 [chat UI](chat-ui.md) for the common launch/control paths.

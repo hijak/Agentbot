@@ -20,7 +20,7 @@ afterEach(async () => {
 });
 
 function scratchSettings(settings: unknown, raw = false): string {
-  const home = mkdtempSync(join(tmpdir(), "omb-qwen-catalog-"));
+  const home = mkdtempSync(join(tmpdir(), "agentbot-qwen-catalog-"));
   scratchDirs.push(home);
   const dir = join(home, ".qwen");
   mkdirSync(dir, { recursive: true });
@@ -34,7 +34,7 @@ function homeEnv(home: string): Record<string, string> {
 
 describe("readQwenModelCatalog", () => {
   it("returns an empty catalog for missing, malformed, or unsupported settings", () => {
-    const missing = join(tmpdir(), "omb-qwen-missing-home");
+    const missing = join(tmpdir(), "agentbot-qwen-missing-home");
     expect(readQwenModelCatalog(homeEnv(missing))).toEqual({ default: "", options: [] });
 
     const malformed = scratchSettings("{not-json", true);

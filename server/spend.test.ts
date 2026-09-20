@@ -33,7 +33,7 @@ describe("prices", () => {
 describe("spend against a monthly cap", () => {
   let dataDir: string;
   const now = new Date("2026-09-15T12:00:00Z");
-  beforeEach(() => { dataDir = mkdtempSync(join(tmpdir(), "omb-spend-")); resetSpendCacheForTests(); });
+  beforeEach(() => { dataDir = mkdtempSync(join(tmpdir(), "agentbot-spend-")); resetSpendCacheForTests(); });
   afterEach(async () => { await removeTempDir(dataDir); });
 
   const row = (at: string, costUsd: number | null) => ({

@@ -1,6 +1,6 @@
 import { track } from "@/lib/analytics";
 import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from "react";
-import { ArrowUp, BookOpen, Clock, Mic, Paperclip, Square, Target, Users, X } from "lucide-react";
+import { ArrowUp, BookOpen, Clock, CornerDownRight, Mic, Paperclip, Square, Target, Users, X } from "lucide-react";
 import { useStore, visibleMessages, currentTaskBot, type Bot, type Group, type Message } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { activeLocale, t } from "@/lib/i18n";
@@ -352,6 +352,16 @@ export function Composer({
     Boolean(approval),
   );
   const [steering, setSteering] = useState(false);
+  // While a turn is live, the prompt offers Steer vs Queue so the person
+  // chooses delivery before Enter — matching the dashboard's explicit
+  // mid-run send, plus Agentbot's live-steer path.
+  const [busySendMode, setBusySendMode] = useState<"steer" | "queue">(canSteer ? "steer" : "queue");
+  useEffect(() => {
+    if (!busy) return;
+    setBusySendMode(canSteer ? "steer" : "queue");
+  }, [busy, canSteer, threadId]);
+  const preferSteer = busy && busySendMode === "steer";
+  const preferQueue = busy && busySendMode === "queue";
   const interruptTurn = () => {
     if (group) dispatch({ type: "interruptGroup", groupId: group.id, threadId });
     else if (bot) dispatch({ type: "interrupt", botId: bot.id, threadId });
@@ -541,6 +551,9 @@ export function Composer({
         replyToId: replyTo?.id,
         threadId,
         mode: effectiveChannelMode,
+        ...(preferSteer
+          ? { afterQueue: canSteer ? "steer" : "interrupt" }
+          : {}),
         onError: () => restoreDraft(sentDraft),
       });
       track("message_sent", { room: true, mode: effectiveChannelMode, queued: busy });
@@ -552,9 +565,14 @@ export function Composer({
         sendId: sentDraft.sendId,
         replyToId: replyTo?.id,
         threadId,
+        ...(preferQueue ? { preferQueue: true } : {}),
+        ...(preferSteer && !canSteer ? { preferQueue: true, afterQueue: "interrupt" } : {}),
         onError: () => restoreDraft(sentDraft),
       });
-      track("message_sent", { driver: bot.modelSelection?.instanceId, queued: busy && !canSteer });
+      track("message_sent", {
+        driver: bot.modelSelection?.instanceId,
+        queued: busy && (preferQueue || !canSteer),
+      });
     }
     setText("");
     setAttachments([]);
@@ -918,6 +936,54 @@ export function Composer({
                   onPin={(surface) => dispatch({ type: "updateTask", botId: modeBot.id, threadId: modeBot.threadId, patch: { surface } })}
                 />
               )}
+              {busy && !locked && !approval && (
+                <div
+                  role="group"
+                  aria-label={t("composer.busyMode.group")}
+                  className="flex items-center gap-1"
+                >
+                  <button
+                    type="button"
+                    aria-pressed={busySendMode === "steer"}
+                    aria-label={
+                      canSteer
+                        ? t("composer.busyMode.steerHint")
+                        : t("composer.busyMode.steerInterruptHint")
+                    }
+                    title={
+                      canSteer
+                        ? t("composer.busyMode.steerHint")
+                        : t("composer.busyMode.steerInterruptHint")
+                    }
+                    onClick={() => setBusySendMode("steer")}
+                    className={cn(
+                      "flex h-8 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 text-[13px] transition-colors",
+                      busySendMode === "steer"
+                        ? "border-accent/35 bg-accent/10 text-accent"
+                        : "border-hairline/20 bg-transparent text-ink-secondary hover:bg-raised hover:text-ink",
+                    )}
+                  >
+                    <CornerDownRight size={14} aria-hidden="true" />
+                    {t("composer.busyMode.steer")}
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={busySendMode === "queue"}
+                    aria-label={t("composer.busyMode.queueHint")}
+                    title={t("composer.busyMode.queueHint")}
+                    onClick={() => setBusySendMode("queue")}
+                    className={cn(
+                      "flex h-8 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 text-[13px] transition-colors",
+                      busySendMode === "queue"
+                        ? "border-accent/35 bg-accent/10 text-accent"
+                        : "border-hairline/20 bg-transparent text-ink-secondary hover:bg-raised hover:text-ink",
+                    )}
+                  >
+                    <Clock size={14} aria-hidden="true" />
+                    {t("composer.busyMode.queue")}
+                  </button>
+                </div>
+              )}
             </div>
           )}
           <MentionTextarea
@@ -1011,8 +1077,8 @@ export function Composer({
               ? t("composer.placeholder.attaching")
               : recording
               ? t("composer.placeholder.listening")
-              : busy && canSteer
-                ? pendingCount > 0
+              : busy && preferSteer
+                ? pendingCount > 0 && canSteer
                   ? t("composer.placeholder.steerQueued", { name: busyName })
                   : t("composer.placeholder.steer", { name: busyName })
               : busy
@@ -1064,27 +1130,29 @@ export function Composer({
             onClick={send}
             disabled={attachmentPending}
             aria-label={
-              busy && canSteer
+              preferSteer
                   ? t("composer.send.steer")
-                  : busy
+                  : preferQueue
                     ? t("composer.send.queue")
                     : t("composer.send.message")
             }
             title={
-              busy && canSteer
-                  ? t("composer.send.steer")
-                  : busy
+              preferSteer
+                  ? canSteer
+                    ? t("composer.send.steer")
+                    : t("composer.busyMode.steerInterruptHint")
+                  : preferQueue
                     ? t("composer.send.queueHint")
                     : t("chat.send")
             }
             className={cn(
               "flex size-8 shrink-0 items-center justify-center rounded-full text-white",
-              busy && !canSteer
+              preferQueue
                   ? "bg-raised text-ink-secondary hover:bg-raised-hover"
                   : "bg-accent hover:brightness-110",
             )}
           >
-            {busy && !canSteer ? <Clock size={15} /> : <ArrowUp size={17} />}
+            {preferQueue ? <Clock size={15} /> : <ArrowUp size={17} />}
           </button>
           )}
           </div>

@@ -16,7 +16,7 @@ import {
 const dirs: string[] = [];
 
 function tempFile() {
-  const dir = mkdtempSync(join(tmpdir(), "omb-routines-"));
+  const dir = mkdtempSync(join(tmpdir(), "agentbot-routines-"));
   dirs.push(dir);
   return join(dir, "routines.json");
 }
@@ -833,7 +833,7 @@ describe("RoutineManager", () => {
         routineName: "Morning brief",
         status: "failed",
         threadId: "thread-1",
-        error: "OpenMausBot restarted while this routine was running",
+        error: "Agentbot restarted while this routine was running",
       },
     ]);
   });

@@ -51,7 +51,7 @@ describe("commandSummary", () => {
 
   it("says nothing for a call that runs no command — a Read, an Edit, a fetch", () => {
     expect(commandSummary({ file_path: "/tmp/notes.md" })).toBeUndefined();
-    expect(commandSummary({ file_path: "scripts/control-omb.ts", old_string: "a", new_string: "b" })).toBeUndefined();
+    expect(commandSummary({ file_path: "scripts/control-agentbot.ts", old_string: "a", new_string: "b" })).toBeUndefined();
     expect(commandSummary({ url: "https://example.com/docs" })).toBeUndefined();
     expect(commandSummary({ question: "Which one?" })).toBeUndefined();
     expect(commandSummary({})).toBeUndefined();

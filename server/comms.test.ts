@@ -130,7 +130,7 @@ describe("legacy routine comms e2e (fake ACP fleet)", () => {
 
   beforeAll(async () => {
     chmodSync(FAKE_CLI, 0o755);
-    home = mkdtempSync(join(tmpdir(), "omb-comms-test-"));
+    home = mkdtempSync(join(tmpdir(), "agentbot-comms-test-"));
     gateFile = join(home, "helper-gate");
     const antigravityDirectory = join(home, "fake-antigravity");
     const antigravityCli = join(antigravityDirectory, "agy_acp_server.ts");
@@ -147,7 +147,7 @@ describe("legacy routine comms e2e (fake ACP fleet)", () => {
     }
     const antigravityProfile = join(
       home,
-      ".openmausbot",
+      ".agentbot",
       "providers",
       "antigravity",
       createHash("sha256").update("geminiAsker").digest("hex"),
@@ -155,9 +155,9 @@ describe("legacy routine comms e2e (fake ACP fleet)", () => {
     );
     mkdirSync(antigravityProfile, { recursive: true });
     writeFileSync(join(antigravityProfile, "acp_token.json"), "{}\n");
-    mkdirSync(join(home, ".openmausbot"), { recursive: true });
+    mkdirSync(join(home, ".agentbot"), { recursive: true });
     writeFileSync(
-      join(home, ".openmausbot", "config.json"),
+      join(home, ".agentbot", "config.json"),
       JSON.stringify({
         instances: {
           // the ask-peer fleet: both bots run "ask-peer" so A can ask B
@@ -252,10 +252,10 @@ describe("legacy routine comms e2e (fake ACP fleet)", () => {
     const env: NodeJS.ProcessEnv = {
       HOME: home,
       USERPROFILE: home,
-      OMB_PORT: String(PORT),
+      AGENTBOT_PORT: String(PORT),
       // e2e-friendly ask ceiling: the timeout-conversion test needs the
       // synchronous wait to end while the gated peer turn is still open
-      OMB_ASK_BOT_TIMEOUT_MS: "8000",
+      AGENTBOT_ASK_BOT_TIMEOUT_MS: "8000",
     };
     if (process.env.PATH) env.PATH = process.env.PATH;
     // Without SystemRoot, winsock fails to initialize in the child.

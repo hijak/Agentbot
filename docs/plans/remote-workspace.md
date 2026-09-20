@@ -1,6 +1,6 @@
 # Plan: Remote Workspace
 
-Run the OpenMausBot server anywhere; connect from the desktop app, any
+Run the Agentbot server anywhere; connect from the desktop app, any
 browser, or the phone — with real authentication instead of the loopback
 trust model.
 
@@ -42,8 +42,8 @@ We studied a shipped design that solves this same problem for a
 desktop-first agent app and adopt these points as requirements:
 
 1. **Stable server identity.** The server generates `environmentId` once
-   (`OMB_DATA_DIR/environment-id`) and serves a descriptor at
-   `/.well-known/openmausbot/environment` — id, label, platform, version,
+   (`AGENTBOT_DATA_DIR/environment-id`) and serves a descriptor at
+   `/.well-known/agentbot/environment` — id, label, platform, version,
    capabilities. Clients verify the id on every connect and refuse a
    mismatch loudly (a re-used URL now pointing at a different server).
 2. **Two-stage credentials.** Pairing code: 12 characters from a 32-symbol
@@ -92,7 +92,7 @@ desktop-first agent app and adopt these points as requirements:
    which is classified into a closed label set before it reaches a log.
 10. **Launch is not access.** How a server comes to exist (Docker, systemd,
     someone's laptop) is separate from how a client speaks to it (direct
-    URL, private network, managed tunnel). Launch provenance is UX only.
+    URL, private network). Launch provenance is UX only.
 11. **Brute-force protection the reference lacks.** Five failed exchanges
     per source in a minute lock pairing for that source for ten minutes,
     thirty across all sources lock everyone for one, and every failure is
@@ -110,13 +110,12 @@ desktop-first agent app and adopt these points as requirements:
 2. **Private network helper**: detect a Tailscale MagicDNS name and offer
    `tailscale serve` for HTTPS with the server's actual port (TLS is
    Tailscale's; the server never terminates TLS). Shipped for the command
-   line as `openmausbot serve --tailscale`.
-3. **Managed tunnel**: the cloudflared managed-tunnel channel the companion
-   already uses — zero network configuration. Rides on the same sessions.
-   Shipped for the command line as `openmausbot login` + `serve --tunnel`
-   (`server/tunnel.ts`): the tunnel gateway forwards to a second, IPC
-   listener on the harness, on which every request is "through a proxy" by
-   construction.
+   line as `agentbot serve --tailscale`.
+3. **Managed tunnel (removed)**: the cloudflared managed-tunnel channel the
+   companion used — zero network configuration. It shipped for the command
+   line as `agentbot login` + `serve --tunnel` (`server/tunnel.ts`) and has
+   since been removed; use `--tailscale`, `--domain`, or `--public-url`
+   instead. The historical design notes below are preserved as written.
 
 Base URLs are resolved per connection at runtime. Nothing bakes an origin
 into the renderer bundle; the served UI keeps using relative paths.
@@ -159,5 +158,6 @@ by that step.
    + scope table + lockout (~1 week, all under tests).
 3. Clients: environments list, pairing screen (paste URL or scan), session
    supervisor, version banner; served web UI gets the cookie path (~1 week).
-4. Tailscale helper and managed tunnel for desktop (~3 days each).
+4. Tailscale helper for desktop (~3 days). The managed-tunnel desktop item
+   was removed with the tunnel itself.
 5. Enterprise identity extends the seam (separate track).

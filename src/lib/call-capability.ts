@@ -4,6 +4,15 @@ export type CallCapabilityHelp = {
   action?: "choose-local-workspace";
 };
 
+export function browserSpeechRecognitionAvailable(): boolean {
+  if (typeof window === "undefined") return false;
+  const w = window as unknown as {
+    SpeechRecognition?: unknown;
+    webkitSpeechRecognition?: unknown;
+  };
+  return Boolean(w.SpeechRecognition || w.webkitSpeechRecognition);
+}
+
 /** Explain why this renderer cannot start a call. Keep the remote-workspace
  * case distinct: the installed Mac app is already present, but this page is
  * intentionally denied access to the Mac microphone. */
@@ -11,7 +20,8 @@ export function callCapabilityHelp(
   capabilities: DesktopCapabilities,
   speechServiceAvailable: boolean,
 ): CallCapabilityHelp | null {
-  if (!capabilities.dictation.available) {
+  const hasSpeech = speechServiceAvailable || browserSpeechRecognitionAvailable();
+  if (!capabilities.dictation.available && !browserSpeechRecognitionAvailable()) {
     switch (capabilities.dictation.reasonCode) {
       case "remote-server":
         return {
@@ -37,7 +47,7 @@ export function callCapabilityHelp(
         };
     }
   }
-  if (!speechServiceAvailable) {
+  if (!hasSpeech) {
     return {
       label: "The call service is unavailable",
       reason: "The speech service is unavailable in this app build. Restart or update Agentbot.",

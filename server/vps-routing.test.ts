@@ -5,7 +5,7 @@
 // and hold/clear its activeVpsThreads claim across the turn.
 //
 // The "injected VpsCommandRunner" is a fake `docker` executable on
-// OMB_EXTRA_PATH: the server runs in its own process, so injection happens
+// AGENTBOT_EXTRA_PATH: the server runs in its own process, so injection happens
 // where defaultRunner actually looks — argv in, canned inspect JSON out,
 // every invocation appended to a log the assertions read. The agent is the
 // fake ACP CLI in echo-gated mode (see steer-queue.test.ts), whose echo
@@ -171,8 +171,8 @@ posixOnly("VPS turn routing e2e (fake ACP fleet + fake docker over SSH)", () => 
 
   beforeAll(async () => {
     chmodSync(FAKE_CLI, 0o755);
-    home = mkdtempSync(join(tmpdir(), "omb-vps-routing-"));
-    mkdirSync(join(home, ".openmausbot"), { recursive: true });
+    home = mkdtempSync(join(tmpdir(), "agentbot-vps-routing-"));
+    mkdirSync(join(home, ".agentbot"), { recursive: true });
     const fakeBin = join(home, "fakebin");
     mkdirSync(fakeBin, { recursive: true });
     gateFile = join(home, "turn.gate");
@@ -201,7 +201,7 @@ createServer(socket => socket.end()).listen(port, '127.0.0.1');
     writeFileSync(dockerLog, "");
 
     writeFileSync(
-      join(home, ".openmausbot", "config.json"),
+      join(home, ".agentbot", "config.json"),
       JSON.stringify({
         instances: {
           vps: {
@@ -216,8 +216,8 @@ createServer(socket => socket.end()).listen(port, '127.0.0.1');
     const env: NodeJS.ProcessEnv = {
       HOME: home,
       USERPROFILE: home,
-      OMB_PORT: String(PORT),
-      OMB_EXTRA_PATH: fakeBin,
+      AGENTBOT_PORT: String(PORT),
+      AGENTBOT_EXTRA_PATH: fakeBin,
       FAKE_DOCKER_DIR: fakeBin,
       FAKE_DOCKER_LOG: dockerLog,
     };
@@ -334,7 +334,7 @@ createServer(socket => socket.end()).listen(port, '127.0.0.1');
           writeFileSync(template, original.replace('"Running":true', '"Running":false'));
         } else expect(first.find((tool: { name: string }) => tool.name === "computer")).toBeUndefined();
         const agents = first.find((tool: { name: string }) => tool.name === "agents");
-        const token = agents.env.find((entry: { name: string }) => entry.name === "OMB_COMMS_TOKEN").value;
+        const token = agents.env.find((entry: { name: string }) => entry.name === "AGENTBOT_COMMS_TOKEN").value;
         const availability = await (await fetch(`${BASE}/api/internal/computer/select`, { headers: { authorization: `Bearer ${token}` } })).json() as any;
         expect(availability.options.find((option: any) => option.surface === "cloud")).toMatchObject({ available: true, ready: false,
           canStart: state !== "missing", canCreate: state === "missing" });

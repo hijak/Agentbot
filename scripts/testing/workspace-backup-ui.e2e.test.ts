@@ -7,14 +7,14 @@ import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 import { resolveAgentBrowserBinary } from "../../server/browser-engine.ts";
 import { waitForExit } from "../../server/testing/cleanup.ts";
-import { runControlOmb } from "../control-omb.ts";
-import { UI_TOOLS_DIR } from "./control-omb-ui.ts";
+import { runControlOmb } from "../control-agentbot.ts";
+import { UI_TOOLS_DIR } from "./control-agentbot-ui.ts";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const binary = resolveAgentBrowserBinary({ dataDir: UI_TOOLS_DIR, env: process.env });
-const forced = process.env.OMB_UI_E2E === "1";
+const forced = process.env.AGENTBOT_UI_E2E === "1";
 const enabled = forced || Boolean(binary);
-if (!enabled) console.log("skipping workspace backup UI e2e: no agent-browser; set OMB_UI_E2E=1 to install the pinned release");
+if (!enabled) console.log("skipping workspace backup UI e2e: no agent-browser; set AGENTBOT_UI_E2E=1 to install the pinned release");
 const LAUNCH_TIMEOUT_MS = forced && !binary ? 600_000 : 180_000;
 interface FixtureInfo { ui: string; url: string; dataDir: string; logPath: string }
 
@@ -26,7 +26,7 @@ describe("full backup Settings in the real renderer", () => {
   (enabled ? it : it.skip)("uses passwords, a file preview and explicit replacement without leaking secrets", async () => {
     let stdout = "";
     let stderr = "";
-    child = spawn(process.execPath, ["--experimental-strip-types", join(ROOT, "scripts/control-omb.ts"), "ui", "launch"], {
+    child = spawn(process.execPath, ["--experimental-strip-types", join(ROOT, "scripts/control-agentbot.ts"), "ui", "launch"], {
       cwd: ROOT, env: process.env, stdio: ["ignore", "pipe", "pipe"],
     });
     child.stdout!.on("data", (chunk: Buffer) => { stdout += String(chunk); });
@@ -67,7 +67,7 @@ describe("full backup Settings in the real renderer", () => {
         if (path.endsWith('/upload')) return reply({ id: 'uploaded-file' });
         if (path.endsWith('/preview')) {
           if (body.password !== 'fixture password 123') return reply({ error: 'Fixture password rejected' }, 400);
-          return reply({ id: 'validated-stage', summary: { format: 'openmaus.workspace-backup', version: 1, id: 'archive-id', createdAt: '2026-09-11T00:00:00Z', appVersion: '0.1.71', files: 12, directories: 4, bytes: 4321, bots: 3, groups: 2, threads: 7, messages: 21, warnings: ['Fixture warning: routines will be paused'], exclusions: ['Saved account credentials and connections', 'External CLI sign-ins', 'Remote VM disks'] } });
+          return reply({ id: 'validated-stage', summary: { format: 'agentbot.workspace-backup', version: 1, id: 'archive-id', createdAt: '2026-09-11T00:00:00Z', appVersion: '0.1.71', files: 12, directories: 4, bytes: 4321, bots: 3, groups: 2, threads: 7, messages: 21, warnings: ['Fixture warning: routines will be paused'], exclusions: ['Saved account credentials and connections', 'External CLI sign-ins', 'Remote VM disks'] } });
         }
         if (path.endsWith('/restore')) { fixture.pending = true; return reply({ restartRequired: true, restoreId: 'validated-stage' }); }
         return reply({ error: 'Unexpected fixture route' }, 404);
@@ -76,9 +76,9 @@ describe("full backup Settings in the real renderer", () => {
         if (this.getAttribute('href')?.startsWith('/api/workspace-backup/download/')) { window.backupFixture.download = { href: this.getAttribute('href'), filename: this.download }; return; }
         return originalClick.call(this);
       };
-      localStorage.setItem('omb-drafts', JSON.stringify({fixture: 'private fixture draft'}));
+      localStorage.setItem('agentbot-drafts', JSON.stringify({fixture: 'private fixture draft'}));
       localStorage.setItem('fixture-auth-token', 'must not export');
-      localStorage.setItem('omb-webhook-credentials', 'fixture private URL must not export');
+      localStorage.setItem('agentbot-webhook-credentials', 'fixture private URL must not export');
       return true;
     })()`);
     await expect.poll(snapshot, { timeout: 10_000 }).toContain('button "You"');
@@ -100,7 +100,7 @@ describe("full backup Settings in the real renderer", () => {
     await click("Export full backup");
     await expect.poll(() => evaluate("window.backupFixture.download"), { timeout: 10_000 }).toEqual({ href: "/api/workspace-backup/download/download-stage", filename: "fixture.ombbackup" });
     expect(await evaluate("window.backupFixture.calls.find(call => call.path.endsWith('/export')).body.clientState['fixture-auth-token'] ?? null")).toBeNull();
-    expect(await evaluate("window.backupFixture.calls.find(call => call.path.endsWith('/export')).body.clientState['omb-webhook-credentials'] ?? null")).toBeNull();
+    expect(await evaluate("window.backupFixture.calls.find(call => call.path.endsWith('/export')).body.clientState['agentbot-webhook-credentials'] ?? null")).toBeNull();
     expect(await evaluate("Object.values(localStorage).some(value => value.includes('fixture password 123'))")).toBe(false);
 
     // A File is delivered through the native input's change event. This
@@ -124,10 +124,10 @@ describe("full backup Settings in the real renderer", () => {
     const evidence = join(ROOT, ".omb-scratch", "verify-evidence", "workspace-backup-preview.png");
     await ui("screenshot", "--out", evidence);
     await click("Replace workspace");
-    await expect.poll(snapshot, { timeout: 10_000 }).toContain("Fully quit OpenMausBot");
+    await expect.poll(snapshot, { timeout: 10_000 }).toContain("Fully quit Agentbot");
     expect(await evaluate("window.backupFixture.calls.find(call => call.path.endsWith('/restore')).body")).toEqual({ id: "validated-stage", confirmation: "REPLACE" });
     expect(await evaluate("window.backupFixture.calls.find(call => call.path.endsWith('/upload')).rawFile")).toBe(true);
-    expect(await evaluate("localStorage.getItem('omb-pending-workspace-restore')")).toBe("validated-stage");
+    expect(await evaluate("localStorage.getItem('agentbot-pending-workspace-restore')")).toBe("validated-stage");
     console.log(JSON.stringify({ fixture: info, screenshot: evidence, archiveApi: "simulated; renderer controls real" }));
     await waitForExit(child, { signal: "SIGINT", graceMs: 30_000 });
     expect(child.exitCode).toBe(0);

@@ -10,6 +10,13 @@ export declare class ControlPlaneError extends Error {
 export declare function normalizeControlPlaneURL(value: unknown): string;
 export declare function normalizeAccountEmail(value: unknown): string;
 
+export declare const DEFAULT_COMPANION_CONTROL_PLANE_URL: string;
+
+export declare function resolveCompanionControlPlaneURL(options?: {
+  isPackaged?: boolean;
+  environment?: NodeJS.ProcessEnv;
+}): string;
+
 export interface ControlPlaneUser {
   id: string;
   email: string;

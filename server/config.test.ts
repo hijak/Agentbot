@@ -91,9 +91,9 @@ describe("configuration boundaries", () => {
     expect(parseStoredConfig({ imageGen: { key: "legacy" } }).imageGen).toEqual({ key: "legacy" });
     expect(() => parseConfigPatch({ imageGen: { provider: "unknown" } })).toThrow("provider");
     expect(() => parseConfigPatch({ imageGen: { customUrl: "https://user:secret@router.example/v1" } })).toThrow("customUrl");
-    const childEnv = { OMB_CUSTOM_IMAGE_KEY: "must-not-reach-bot" };
+    const childEnv = { AGENTBOT_CUSTOM_IMAGE_KEY: "must-not-reach-bot" };
     stripWorkspaceCredentialEnv(childEnv);
-    expect(childEnv).not.toHaveProperty("OMB_CUSTOM_IMAGE_KEY");
+    expect(childEnv).not.toHaveProperty("AGENTBOT_CUSTOM_IMAGE_KEY");
   });
   it("persists a custom domain but excludes it from generic config patches", () => {
     expect(parseStoredConfig({ customDomain: "https://bots.example.com" })).toEqual({ customDomain: "https://bots.example.com" });
@@ -471,11 +471,12 @@ describe("configuration boundaries", () => {
     );
   });
 
-  it("keeps tool-call chips off by default and accepts an explicit opt-in", () => {
-    expect(showToolCallsEnabled({})).toBe(false);
-    expect(parseConfigPatch({ features: { showToolCalls: true } })).toEqual({
-      features: { showToolCalls: true },
+  it("keeps tool-call chips on by default and accepts an explicit opt-out", () => {
+    expect(showToolCallsEnabled({})).toBe(true);
+    expect(parseConfigPatch({ features: { showToolCalls: false } })).toEqual({
+      features: { showToolCalls: false },
     });
+    expect(showToolCallsEnabled({ features: { showToolCalls: false } })).toBe(false);
     expect(showToolCallsEnabled({ features: { showToolCalls: true } })).toBe(true);
   });
 
@@ -822,9 +823,9 @@ describe("credential env preference", () => {
     "OPENAI_COMPAT_PROVIDER",
     "BOX_TOKEN",
     "OPENCODE_API_KEY",
-    "OMB_TTS_KEY",
-    "OMB_FISH_AUDIO_API_KEY",
-    "OMB_OPENAI_IMAGE_KEY",
+    "AGENTBOT_TTS_KEY",
+    "AGENTBOT_FISH_AUDIO_API_KEY",
+    "AGENTBOT_OPENAI_IMAGE_KEY",
     "COMPOSIO_API_KEY",
   ] as const;
   let saved: Record<string, string | undefined>;
@@ -860,9 +861,9 @@ describe("credential env preference", () => {
     process.env.XAI_API_KEY = "env-xai";
     process.env.BOX_TOKEN = "env-box";
     process.env.OPENCODE_API_KEY = "env-ocg";
-    process.env.OMB_TTS_KEY = "env-tts";
-    process.env.OMB_FISH_AUDIO_API_KEY = "env-fish";
-    process.env.OMB_OPENAI_IMAGE_KEY = "env-image";
+    process.env.AGENTBOT_TTS_KEY = "env-tts";
+    process.env.AGENTBOT_FISH_AUDIO_API_KEY = "env-fish";
+    process.env.AGENTBOT_OPENAI_IMAGE_KEY = "env-image";
     const cfg = loadConfig();
     expect(cfg.xai).toEqual({ key: "env-xai", url: "https://api.example.test/v1" });
     expect(cfg.box).toEqual({ token: "env-box" });
@@ -1029,16 +1030,16 @@ describe("credential env preference", () => {
     expect(process.env.XAI_API_KEY).toBe("just-saved");
     expect(process.env.COMPOSIO_API_KEY).toBe("ak_just_saved");
     expect(process.env.BOX_TOKEN).toBeUndefined();
-    expect(process.env.OMB_TTS_KEY).toBeUndefined();
-    expect(process.env.OMB_FISH_AUDIO_API_KEY).toBeUndefined();
+    expect(process.env.AGENTBOT_TTS_KEY).toBeUndefined();
+    expect(process.env.AGENTBOT_FISH_AUDIO_API_KEY).toBeUndefined();
   });
 
   it("syncCredentialEnv updates Fish Audio without replacing ElevenLabs", () => {
-    process.env.OMB_TTS_KEY = "eleven-kept";
-    process.env.OMB_FISH_AUDIO_API_KEY = "fish-old";
+    process.env.AGENTBOT_TTS_KEY = "eleven-kept";
+    process.env.AGENTBOT_FISH_AUDIO_API_KEY = "fish-old";
     syncCredentialEnv({ tts: { fishKey: "fish-new" } });
-    expect(process.env.OMB_TTS_KEY).toBe("eleven-kept");
-    expect(process.env.OMB_FISH_AUDIO_API_KEY).toBe("fish-new");
+    expect(process.env.AGENTBOT_TTS_KEY).toBe("eleven-kept");
+    expect(process.env.AGENTBOT_FISH_AUDIO_API_KEY).toBe("fish-new");
   });
 
   it("syncCredentialEnv keeps model and provider env in step with a save", () => {
@@ -1086,11 +1087,11 @@ describe("workspace credential env strip", () => {
     // These secrets have no per-driver ACP allowlist entry anywhere — they are
     // consumed in-process (Computer driver / voice module), never by a CLI
     expect(WORKSPACE_CREDENTIAL_ENV).toContain("BOX_TOKEN");
-    expect(WORKSPACE_CREDENTIAL_ENV).toContain("OMB_TTS_KEY");
-    expect(WORKSPACE_CREDENTIAL_ENV).toContain("OMB_FISH_AUDIO_API_KEY");
-    expect(WORKSPACE_CREDENTIAL_ENV).toContain("OMB_OPENAI_IMAGE_KEY");
-    expect(WORKSPACE_CREDENTIAL_ENV).toContain("OMB_BROWSER_CONNECTION");
-    expect(WORKSPACE_CREDENTIAL_ENV).toContain("OMB_USER_DATA");
+    expect(WORKSPACE_CREDENTIAL_ENV).toContain("AGENTBOT_TTS_KEY");
+    expect(WORKSPACE_CREDENTIAL_ENV).toContain("AGENTBOT_FISH_AUDIO_API_KEY");
+    expect(WORKSPACE_CREDENTIAL_ENV).toContain("AGENTBOT_OPENAI_IMAGE_KEY");
+    expect(WORKSPACE_CREDENTIAL_ENV).toContain("AGENTBOT_BROWSER_CONNECTION");
+    expect(WORKSPACE_CREDENTIAL_ENV).toContain("AGENTBOT_USER_DATA");
   });
 });
 

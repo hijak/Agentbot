@@ -26,6 +26,12 @@ importers:
       '@hugeicons/react':
         specifier: ^1.1.10
         version: 1.1.10(react@19.2.8)
+      '@jax-js/jax':
+        specifier: ^0.1.25
+        version: 0.1.25
+      '@jax-js/loaders':
+        specifier: ^0.1.3
+        version: 0.1.3
       '@novnc/novnc':
         specifier: ^1.7.0
         version: 1.7.0
@@ -435,6 +441,9 @@ packages:
 
   '@better-fetch/fetch@1.3.1':
     resolution: {integrity: sha512-ABkD1WhyfPZprKRQI3bhATjeiFuNWC9PXhfGWqL+sg/gKrM977oFrYkdb4msM3hgUGonr7KlOsOFT5TU2rht9g==}
+
+  '@bufbuild/protobuf@2.15.0':
+    resolution: {integrity: sha512-DAheWUkVr/SJTWCc+lg9dhY0eN4SaWlf4+bG1KzHeXbnqt0AfB/NX0Z+VunGlM1ki1B4zVvye27MpKh/svySUA==}
 
   '@clack/core@1.4.3':
     resolution: {integrity: sha512-/kr3UWNtdJfxZtPgDqUOmG2pvwlmcLGheex5yiZKdwbzZJxhV+HMNR9QNmyY5cGwTNV6LrR7Jtp+KjhUAP1qBQ==}
@@ -1294,6 +1303,13 @@ packages:
   '@isaacs/fs-minipass@4.0.1':
     resolution: {integrity: sha512-wgm9Ehl2jpeqP3zw/7mo3kRHFp5MEDhqAdwy1fTGkHAwnkGOVsgpvQhL8B5n1qlb01jV3n/bI0ZfZp5lWA1k4w==}
     engines: {node: '>=18.0.0'}
+
+  '@jax-js/jax@0.1.25':
+    resolution: {integrity: sha512-g6PxWa6ZLjeQdDAM0ImBSqpdYnC6InCUTCCbMLxhMHMsMNu+JbHRjIQZ/anjBcP69of6hiqfGmTl+3gBn1qu/A==}
+    engines: {pnpm: '>=10.0.0'}
+
+  '@jax-js/loaders@0.1.3':
+    resolution: {integrity: sha512-KLJ0XeAsTDjNE1SJ6myayK5cx0ldbZw8M0XGBZiRy7trQGB6QUPgEDbNXTwa1EmztRKqhgbgQPH9d89hec0wvw==}
 
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
@@ -3923,6 +3939,10 @@ packages:
     engines: {node: '>=10'}
     hasBin: true
 
+  sentencepiece-buf@0.2.1-0:
+    resolution: {integrity: sha512-EUNi6hvPjHr2Jcmy3gFdV+elNNsrDTnkVyJJEMGVFSbXAWacW8gNP0cQEIAG5eGk5Kz46Vc23XZ7udOQeX126Q==}
+    engines: {pnpm: '>=10.0.0'}
+
   serialize-error@7.0.1:
     resolution: {integrity: sha512-8I8TjW5KMOKsZQTvoxjuSIa7foAwPWGOts+6o7sgjz41/qMD9VQHEDxi6PBvK2l0MXUmqZyNpUK+T2tQaaElvw==}
     engines: {node: '>=10'}
@@ -4645,6 +4665,8 @@ snapshots:
 
   '@better-fetch/fetch@1.3.1': {}
 
+  '@bufbuild/protobuf@2.15.0': {}
+
   '@clack/core@1.4.3':
     dependencies:
       fast-wrap-ansi: 0.2.2
@@ -5265,6 +5287,13 @@ snapshots:
   '@isaacs/fs-minipass@4.0.1':
     dependencies:
       minipass: 7.1.3
+
+  '@jax-js/jax@0.1.25': {}
+
+  '@jax-js/loaders@0.1.3':
+    dependencies:
+      '@bufbuild/protobuf': 2.15.0
+      sentencepiece-buf: 0.2.1-0
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:
@@ -8195,6 +8224,10 @@ snapshots:
   semver@7.7.4: {}
 
   semver@7.8.5: {}
+
+  sentencepiece-buf@0.2.1-0:
+    dependencies:
+      '@bufbuild/protobuf': 2.15.0
 
   serialize-error@7.0.1:
     dependencies:

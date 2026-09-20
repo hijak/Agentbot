@@ -32,10 +32,10 @@ export function builtInBrowserEnabled(config: FeatureFlagConfig | null | undefin
   return config?.features?.browser === true;
 }
 
-/** Tool-run chips in the transcript. Off by default — the mascot already
- * shows that work is happening. */
+/** Tool-run chips in the transcript. On by default so live work matches the
+ * dashboard agent trail; Settings can still hide them. */
 export function showToolCallsEnabled(config: FeatureFlagConfig | null | undefined): boolean {
-  return config?.features?.showToolCalls === true;
+  return config?.features?.showToolCalls !== false;
 }
 
 /** Opt-in computer sharing — lending this desktop's folders, terminal or

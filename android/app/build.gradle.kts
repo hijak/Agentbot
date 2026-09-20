@@ -91,11 +91,11 @@ private val appVersionCode = run {
 }
 
 android {
-    namespace = "com.openmausbot.companion"
+    namespace = "com.agentbot.companion"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.openmausbot.companion"
+        applicationId = "com.agentbot.companion"
         minSdk = 26
         targetSdk = 37
         versionCode = appVersionCode

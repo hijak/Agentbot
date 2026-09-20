@@ -86,10 +86,10 @@ export function isProxied(req: IncomingMessage): boolean {
 }
 
 /** A request over an IPC listener (a unix socket or a named pipe) has no peer
- * address. Only a gateway on this machine can reach such a listener, and it
- * is there to forward traffic from elsewhere (`openmausbot serve --tunnel`),
- * so the request is remote by construction: whatever headers it carries or
- * lacks, it never gets loopback trust. */
+ * address. Only a local gateway can reach such a listener, and it is there
+ * to forward traffic from elsewhere, so the request is remote by
+ * construction: whatever headers it carries or lacks, it never gets loopback
+ * trust. */
 export function ipcPeer(req: IncomingMessage): boolean {
   const socket = req.socket;
   return Boolean(socket) && socket.remoteAddress === undefined && socket.remoteFamily === undefined;
@@ -104,13 +104,13 @@ export function isSameOrigin(req: IncomingMessage): boolean {
 }
 
 /** Who to count a pairing attempt against. The server binds loopback, so a
- * remote client always arrives through a proxy or tunnel on this machine;
+ * remote client always arrives through a proxy on this machine;
  * that proxy's X-Forwarded-For (Caddy overwrites any the client sent) names
  * the real source. A connection whose peer is not loopback (a future bind to
  * an interface) is the source itself, and its forwarded header is ignored. */
 export function requestSource(req: IncomingMessage): string {
   const peer = req.socket?.remoteAddress || "unknown";
-  // An IPC listener's only peer is the tunnel gateway on this machine.
+  // An IPC listener's only peer is a local gateway on this machine.
   const viaLocalProxy = ipcPeer(req) || peer === "127.0.0.1" || peer === "::1" || peer === "::ffff:127.0.0.1";
   // The LAST hop is the one the adjacent (trusted, same-machine) proxy wrote;
   // earlier hops are whatever the client or an outer proxy put there.
@@ -297,7 +297,7 @@ export interface ResolveOptions {
   features?: { sharedComputers?: boolean };
 }
 
-const DESKTOP_OWNER_HEADER = "x-openmausbot-desktop-owner";
+const DESKTOP_OWNER_HEADER = "x-agentbot-desktop-owner";
 
 function mutatingPublicRoute(method: string, path: string): boolean {
   const upper = method.toUpperCase();
@@ -373,12 +373,12 @@ export function resolveRequestAuth(req: IncomingMessage, options: ResolveOptions
   const proxied = isProxied(req);
   const loopback = !proxied && isLoopbackHost(headerValue(req.headers.host)) && isAllowedOrigin(headerValue(req.headers.origin));
   if (loopback) {
-    const companionToken = headerValue(req.headers["x-openmausbot-companion-auth"]);
+    const companionToken = headerValue(req.headers["x-agentbot-companion-auth"]);
     if (companionToken && options.loopbackMutationToken !== undefined) {
       if (
         !secureTokenMatch(companionToken, options.companionMutationToken ?? "") ||
-        req.headers["x-openmausbot-companion"] !== "1" ||
-        !/^[\w-]{1,128}$/.test(headerValue(req.headers["x-openmausbot-companion-device"]) ?? "") ||
+        req.headers["x-agentbot-companion"] !== "1" ||
+        !/^[\w-]{1,128}$/.test(headerValue(req.headers["x-agentbot-companion-device"]) ?? "") ||
         companionDenial({ path, method, authenticated: true })
       ) return deny(403, "forbidden: invalid companion request");
       return { auth: { kind: "loopback", scopes: LOOPBACK_SCOPES }, status: 401, error: "" };

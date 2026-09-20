@@ -12,7 +12,7 @@ Stagehand, browser-use, browserless, Lightpanda) is summarised at the end.
   sandbox, and Electron 43 exits before ready with it on Windows
   (electron/electron#51761). A browser that is its own Chrome process, driven
   over CDP, does not depend on that.
-- **Servers have no browser today.** `openmausbot serve` and the Docker stack
+- **Servers have no browser today.** `agentbot serve` and the Docker stack
   run without Electron, so `availableBrowserConnection()` is null and the
   toggle is greyed.
 - **One engine, one contract.** A skill written on a Mac runs on a VPS.
@@ -52,18 +52,18 @@ capability. Native session identity and encryption keys stay in the server.
 ### 1. Headless engine (servers, and the fallback everywhere) — shipped
 
 - `server/browser-engine.ts`: resolve the pinned agent-browser binary
-  (`OMB_AGENT_BROWSER_PATH` → `$OMB_DATA_DIR/tools/agent-browser/<version>/` →
+  (`AGENTBOT_AGENT_BROWSER_PATH` → `$AGENTBOT_DATA_DIR/tools/agent-browser/<version>/` →
   PATH); download from the GitHub release with per-platform SHA-256 pinned in
-  `server/browser-engine-release.ts` (same pattern as `antigravity-release.ts`
-  and `prepare-cloudflared.mjs`); ensure Chrome with `agent-browser install`;
+   `server/browser-engine-release.ts` (same pattern as `antigravity-release.ts`);
+   ensure Chrome with `agent-browser install`;
   report `unavailable` with the reason rather than degrading silently.
 - `browserIntegration()`: when no desktop connection exists and the engine is
   available, return `{command: <binary>, args: ["mcp", "--tools", "core",
   "--no-webmcp"], env: {AGENT_BROWSER_SESSION, AGENT_BROWSER_RESTORE: <stable-key>,
   AGENT_BROWSER_ENCRYPTION_KEY, AGENT_BROWSER_HEADLESS: "1"}}`. Session id =
   the bot's browser profile partition, or the bot id (own session).
-- Encryption key: generated once into `$OMB_DATA_DIR/browser-engine-key`
-  (0600), like the tunnel credentials.
+- Encryption key: generated once into `$AGENTBOT_DATA_DIR/browser-engine-key`
+  (0600).
 - Capability: the environment descriptor gains `capabilities.browser:
   "desktop" | "headless" | "unavailable"` (+ reason), and the Settings toggle
   and the per-bot switch key off it instead of `window.ogb.browser`.

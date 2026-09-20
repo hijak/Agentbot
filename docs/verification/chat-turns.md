@@ -48,7 +48,7 @@ Auto pins the conversation to whatever its first turn reached. A conversation
 pinned from the composer chip wins over the bot's Works on, except Off.
 
 ```sh
-node --experimental-strip-types scripts/control-omb.ts launch
+node --experimental-strip-types scripts/control-agentbot.ts launch
 pnpm control:omb new-bot --name Orbit --url http://127.0.0.1:PORT
 curl -s -X PATCH "http://127.0.0.1:PORT/api/bots/BOT_ID" \
   -H 'content-type: application/json' -d '{"computer":"cloud"}'
@@ -80,7 +80,7 @@ browser, and the turn must tell the model it has no screen rather than leave
 it to narrate a browser it cannot call.
 
 ```sh
-node --experimental-strip-types scripts/control-omb.ts launch
+node --experimental-strip-types scripts/control-agentbot.ts launch
 # second terminal, using the printed URL
 pnpm control:omb new-bot --name Orbit --url http://127.0.0.1:PORT
 pnpm control:omb send --bot BOT_ID --text "list my calendar events" --url http://127.0.0.1:PORT
@@ -180,7 +180,7 @@ persisted deadlines. These tests do not claim real-provider performance.
 pnpm exec vitest run server/independent-threads-api.test.ts
 ```
 
-This test launches a fresh `control-omb` fixture for each case, wraps only its
+This test launches a fresh `control-agentbot` fixture for each case, wraps only its
 fake engine with per-model completion gates, and uses the shared MCP/CLI surface
 for pinned sends, waits, model changes, reads, and interrupts. It verifies two
 tasks running under one bot, switching and creating while busy, separate model

@@ -13,6 +13,7 @@ declare module "@novnc/novnc" {
     blur(): void;
     sendKey(keysym: number, code: string | null, down?: boolean): void;
     clipboardPasteFrom(text: string): void;
+    toDataURL(type?: string, encoderOptions?: number): string;
     disconnect(): void;
     addEventListener(type: string, listener: (event: Event) => void): void;
     removeEventListener(type: string, listener: (event: Event) => void): void;

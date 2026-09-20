@@ -4,7 +4,7 @@
 // bot's own conversation as a user-role message: that is the turn the model
 // answers, and the server stores it that way. The author rides along on
 // Message.peerAsk, and the text opens with a bracketed provenance note for
-// the model ("[Message from @Chief, another bot in this OpenMausBot
+// the model ("[Message from @Chief, another bot in this Agentbot
 // workspace — …]"). A renderer keyed on role alone shows that line on the
 // person's side of the chat, as if they had said it — which is the bug
 // this module exists to prevent. The parse is the client twin of
@@ -26,10 +26,10 @@ export interface PeerLine {
 
 // The note is one bracketed line with a fixed opening; the wording after
 // the workspace clause varies by delivery and is not needed here. Both the
-// legacy "OpenMausBot" note (server/peer-provenance.ts still emits it, and
+// legacy "Agentbot" note (server/peer-provenance.ts still emits it, and
 // old transcripts contain it) and the rebranded "Agentbot" note are accepted.
 const PROVENANCE_NOTE =
-  /^\[(Message from|Delegated by|Thread opened by) @([^,\]]+), another bot in this (?:OpenMausBot|Agentbot) workspace[^\]]*\]\s*/;
+  /^\[(Message from|Delegated by|Thread opened by) @([^,\]]+), another bot in this (?:Agentbot|Agentbot) workspace[^\]]*\]\s*/;
 
 const DELIVERY: Record<string, PeerDelivery> = {
   "Message from": "ask_bot",

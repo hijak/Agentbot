@@ -80,7 +80,9 @@ export function VoiceSettings({
       ? "Host · ElevenLabs"
       : provider === "chatterbox"
         ? "Host · Chatterbox"
-        : "Host voice";
+        : provider === "jax-js"
+          ? "Host · In-browser (jax-js)"
+          : "Host voice";
   const systemVoicesAvailable = capabilities.host.platform === "darwin";
   const hostConfigured = Boolean(tts?.configured);
   const configured = usesLocalSystem || hostConfigured;
@@ -143,7 +145,7 @@ export function VoiceSettings({
     onPatch({ voice: voiceId });
   };
 
-  const setProvider = (next: "elevenlabs" | "fish" | "system" | "chatterbox") => {
+  const setProvider = (next: "elevenlabs" | "fish" | "system" | "chatterbox" | "jax-js") => {
     if (next === provider || switching || (next === "system" && !systemVoicesAvailable)) return;
     setSwitching(true);
     setKeyDraft({ provider: null, value: "" });
@@ -213,7 +215,9 @@ export function VoiceSettings({
                   : " built-in Mac voices are unavailable here. Switch to a hosted voice provider to keep using voice."
                 : provider === "chatterbox"
                   ? " the Chatterbox server address is shared by the workspace."
-                  : ` the ${cloudProvider?.name ?? "voice provider"} key is shared by the workspace.`}</>}
+                  : provider === "jax-js"
+                    ? " audio is synthesized on-device in your browser using Kyutai Pocket TTS."
+                    : ` the ${cloudProvider?.name ?? "voice provider"} key is shared by the workspace.`}</>}
       </div>
 
       {localMacClient && (
@@ -247,12 +251,13 @@ export function VoiceSettings({
       {!workspaceConfigurationLocked && (
         <div className="mt-4">
           <div className="mb-2 text-[13px] text-ink-secondary">Voice engine</div>
-          <div className="grid grid-cols-2 gap-1 rounded-xl bg-inset p-1" role="radiogroup" aria-label="Voice engine">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-1 rounded-xl bg-inset p-1" role="radiogroup" aria-label="Voice engine">
             {([
               { value: "elevenlabs", label: "ElevenLabs", available: true },
               { value: "fish", label: "Fish Audio", available: true },
               { value: "system", label: "Built-in Mac voices", available: systemVoicesAvailable },
               { value: "chatterbox", label: "Chatterbox (local)", available: true },
+              { value: "jax-js", label: "In-browser (jax-js)", available: true },
             ] as const).map((option) => (
               <button
                 key={option.value}
@@ -270,6 +275,21 @@ export function VoiceSettings({
                 {option.label}
               </button>
             ))}
+          </div>
+        </div>
+      )}
+
+      {!workspaceConfigurationLocked && provider === "jax-js" && (
+        <div className="mt-4 rounded-xl border border-hairline/40 bg-inset p-3.5 text-[13px]">
+          <div className="flex items-center gap-2 font-medium text-ink">
+            <span className="size-2 rounded-full bg-success ring-2 ring-success/20" />
+            <span>In-browser Kyutai Pocket TTS</span>
+            <span className="rounded-full bg-success/15 px-2 py-0.5 text-[11px] font-medium text-success">
+              Zero Setup
+            </span>
+          </div>
+          <div className="mt-1.5 text-[12px] leading-relaxed text-ink-secondary">
+            Runs privately on-device via WebGPU / WebAssembly. Model weights (~100 MB) are cached locally and downloaded only when you make your first phone call.
           </div>
         </div>
       )}

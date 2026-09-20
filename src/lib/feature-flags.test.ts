@@ -21,14 +21,12 @@ describe("experimental feature flags", () => {
     expect(builtInBrowserEnabled({ features: { browser: true } })).toBe(true);
   });
 
-  it("hides tool-call chips by default", () => {
-    expect(showToolCallsEnabled(null)).toBe(false);
-    expect(showToolCallsEnabled({})).toBe(false);
-    expect(showToolCallsEnabled({ features: { showToolCalls: false } })).toBe(false);
-  });
-
-  it("shows tool-call chips only after explicit opt-in", () => {
+  it("shows tool-call chips by default and hides them only on an explicit opt-out", () => {
+    expect(showToolCallsEnabled(null)).toBe(true);
+    expect(showToolCallsEnabled({})).toBe(true);
+    expect(showToolCallsEnabled({ features: {} })).toBe(true);
     expect(showToolCallsEnabled({ features: { showToolCalls: true } })).toBe(true);
+    expect(showToolCallsEnabled({ features: { showToolCalls: false } })).toBe(false);
   });
 
   it("keeps computer sharing off unless the server says it is on", () => {

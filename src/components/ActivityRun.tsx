@@ -1,11 +1,12 @@
-// A folded stretch of tool chips: one row saying what ran, click to open.
-//
-// Collapsed by default. A search hit inside a run opens it, and a run stays
-// open once the user has opened it. Failed steps never enter a folded run.
+// A folded stretch of tool chips: one dashboard-style summary chip, click to
+// open. Collapsed by default. A search hit inside a run opens it, and a run
+// stays open once the user has opened it. Failed steps never enter a folded run.
 import { useEffect, useState } from "react";
-import { ChevronRight, Check } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import type { Message } from "@/state/store";
+import { cn } from "@/lib/cn";
 import { describeRun } from "@/lib/activity-runs";
+import { summaryEmojisForTools } from "@/lib/tool-activity-style";
 import { t } from "@/lib/i18n";
 
 export function ActivityRun({
@@ -24,37 +25,48 @@ export function ActivityRun({
   useEffect(() => {
     if (forceOpen) setOpen(true);
   }, [forceOpen]);
+
+  const hasError = messages.some((message) => message.tool?.ok === false);
+  const emojis = summaryEmojisForTools(
+    messages.map((message) => ({ name: message.tool?.name, summary: message.tool?.summary })),
+  );
+  const summary = describeRun(messages);
+
+  const chip = (
+    <button
+      type="button"
+      onClick={() => setOpen(!open)}
+      aria-expanded={open}
+      title={open ? undefined : t("chat.run.showSteps")}
+      className={cn(
+        "flex w-fit items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] leading-snug shadow-sm backdrop-blur transition-colors",
+        hasError
+          ? "border-danger/30 bg-danger/10 text-danger hover:bg-danger/15"
+          : "border-hairline/60 bg-panel/80 text-ink-secondary hover:bg-raised hover:text-ink",
+      )}
+    >
+      <ChevronRight
+        size={12}
+        className={cn("shrink-0 transition-transform", open && "rotate-90")}
+        aria-hidden
+      />
+      <span aria-hidden>{hasError ? "❌" : "✅"}</span>
+      <span>{summary}</span>
+      {emojis.length > 0 ? (
+        <span className="opacity-80" aria-hidden>
+          {emojis.join(" ")}
+        </span>
+      ) : null}
+    </button>
+  );
+
   if (open) {
     return (
-      <div className="flex flex-col gap-1">
-        <div className="flex justify-start">
-          <button
-            type="button"
-            onClick={() => setOpen(false)}
-            aria-expanded
-            className="flex items-center gap-2 rounded-full border border-hairline/40 bg-panel px-3 py-1.5 text-[13px] text-ink-secondary hover:bg-control"
-          >
-            <ChevronRight size={13} className="rotate-90" />
-            <span>{describeRun(messages)}</span>
-          </button>
-        </div>
+      <div className="flex flex-col gap-1.5">
+        <div className="flex justify-start">{chip}</div>
         {children}
       </div>
     );
   }
-  return (
-    <div className="flex justify-start">
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        aria-expanded={false}
-        title={t("chat.run.showSteps")}
-        className="flex items-center gap-2 rounded-full border border-hairline/40 bg-panel px-3 py-1.5 text-[13px] text-ink-secondary hover:bg-control"
-      >
-        <Check size={13} className="text-success" />
-        <span className="max-w-[480px] truncate">{describeRun(messages)}</span>
-        <ChevronRight size={13} />
-      </button>
-    </div>
-  );
+  return <div className="flex justify-start">{chip}</div>;
 }

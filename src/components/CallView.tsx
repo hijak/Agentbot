@@ -29,9 +29,9 @@ import { usePushToTalk } from "@/lib/push-to-talk";
 import { BotAvatar } from "./Avatar";
 import { isRoutineApproval, isSkillApproval, pendingApprovals, spokenApprovalPrompt } from "./PendingApproval";
 import { cn } from "@/lib/cn";
-import { track } from "@/lib/analytics";
 import { useDesktopCapabilities } from "./DesktopCapabilities";
 import { callCapabilityHelp } from "@/lib/call-capability";
+import { BargeInDetector } from "@/lib/call/barge-in";
 
 /** Spoken answers to a permission card. Anything else is read as a reply
  * to the bot, not as consent — an approval must never be granted by a
@@ -42,18 +42,7 @@ const NO = /^(no|nope|don'?t|do not|stop|deny|denied|cancel|never|skip it)\b/i;
 type Phase = "listening" | "sending" | "working" | "speaking";
 const CALL_ENDPOINT_MS = 850;
 
-export function CallButton({ bot }: { bot: Bot }) {
-  return (
-    <CallTargetButton
-      targetId={bot.id}
-      targetName={bot.name}
-      voices={[bot.voice]}
-      setupBotId={bot.id}
-      requireExplicitVoices={false}
-      onStart={() => track("call_started", { driver: bot.modelSelection?.instanceId })}
-    />
-  );
-}
+export { PhoneMenuButton, PhoneMenuButton as CallButton } from "./PhoneMenuButton";
 
 export function CallTargetButton({
   targetId,
@@ -254,6 +243,9 @@ function Call({ bot }: { bot: Bot }) {
   const phaseRef = useRef<Phase>(initialPhase);
   const alive = useRef(true);
   const sayGeneration = useRef(0);
+  const bargeInDetector = useRef<BargeInDetector | null>(null);
+  const [bargeInActive, setBargeInActive] = useState(true);
+  const browserRecognition = useRef<{ start: () => void; abort: () => void; stop: () => void } | null>(null);
 
   /** Change the rendered phase and the synchronous phase used by native
    * callbacks together. React state alone is too late: the helper can exit
@@ -265,75 +257,20 @@ function Call({ bot }: { bot: Bot }) {
 
   const hush = useCallback(() => {
     void window.ogb?.speechStop();
+    if (browserRecognition.current) {
+      try {
+        browserRecognition.current.abort();
+      } catch {
+        // ignore
+      }
+      browserRecognition.current = null;
+    }
   }, []);
 
-  const listen = useCallback(() => {
-    if (!alive.current || currentCall() !== bot.id) return;
-    move("listening");
-    setHeard("");
-    setNote(null);
-    void window.ogb?.speechStart({ endpointMs: CALL_ENDPOINT_MS }).catch(() => {
-      if (alive.current && currentCall() === bot.id) {
-        setNote("The microphone couldn't start. Check Microphone and Speech Recognition access.");
-      }
-    });
-  }, [bot.id, move]);
-
-  /** Speak, with the microphone closed for the duration (see the header
-   * comment — an open mic during playback is a feedback loop). */
-  const say = useCallback(
-    async (text: string) => {
-      if (!alive.current || currentCall() !== bot.id) return false;
-      const mine = ++sayGeneration.current;
-      // Move first. stopSpeech() finishes asynchronously, and its close must
-      // never observe an old "listening" phase and reopen the mic.
-      move("speaking");
-      hush();
-      await speaker.speak(text, { botId: bot.id, voiceId: bot.voice });
-      return alive.current && currentCall() === bot.id && sayGeneration.current === mine;
-    },
-    [bot.id, bot.voice, hush, move],
-  );
-
-  const sayThenListen = useCallback(
-    async (text: string) => {
-      const stillMine = await say(text);
-      if (stillMine && phaseRef.current === "speaking") listen();
-    },
-    [listen, say],
-  );
-
-  // Navigating away from this bot hangs up. Without ownership checking, the
-  // overlay disappeared but `currentCall()` remained set and auto-speak was
-  // permanently disabled for a call nobody could see.
-  useEffect(() => {
-    alive.current = true;
-    return () => {
-      alive.current = false;
-      sayGeneration.current += 1;
-      // StrictMode immediately remounts effects once in development. A
-      // microtask distinguishes that probe from real navigation: the probe
-      // has set alive=true again before this runs; a genuine unmount has not.
-      deferCallCleanup(bot.id, () => alive.current);
-    };
-  }, [bot.id]);
-
-  // ── the microphone ───────────────────────────────────────────────────
-  useEffect(() => {
-    const bridge = window.ogb;
-    if (!bridge) return;
-    const offTranscript = bridge.onSpeechTranscript((line) => {
-      if (!alive.current || currentCall() !== bot.id || phaseRef.current !== "listening") return;
-      if (line.error) {
-        setNote("Dictation stopped unexpectedly. Check Microphone and Speech Recognition access.");
-        return;
-      }
-      if (typeof line.text !== "string") return;
-      setHeard(line.text);
-      if (line.partial !== false) return;
-      // final result — Apple's recognizer decided the turn ended
-      const said = line.text.trim();
-      if (!said) return listen();
+  const handleSpokenText = useCallback(
+    (said: string) => {
+      const trimmed = said.trim();
+      if (!trimmed) return;
 
       const open = askedApproval.current;
       if (open) {
@@ -342,16 +279,15 @@ function Call({ bot }: { bot: Bot }) {
           hush();
           return;
         }
-        if (YES.test(said) || NO.test(said)) {
-          const allow = YES.test(said);
+        if (YES.test(trimmed) || NO.test(trimmed)) {
+          const allow = YES.test(trimmed);
           if (allow && open.skill) {
             setHeard("");
-            void sayThenListen("Open this chat to review the complete skill before enabling it. You can say no now to deny it.");
+            void sayThenListen(
+              "Open this chat to review the complete skill before enabling it. You can say no now to deny it.",
+            );
             return;
           }
-          // Keep this request claimed until the server's durable card patch
-          // arrives. Clearing it here lets a render in that network gap read
-          // and submit the same approval again.
           open.submitted = true;
           move("working");
           hush();
@@ -380,8 +316,6 @@ function Call({ bot }: { bot: Bot }) {
           });
           return;
         }
-        // not a decision — leave the card up and say so rather than
-        // guessing consent from an ambiguous sentence
         void sayThenListen("Sorry — is that a yes or a no?");
         return;
       }
@@ -389,13 +323,180 @@ function Call({ bot }: { bot: Bot }) {
       const openQuestion = askedQuestion.current;
       if (openQuestion) {
         askedQuestion.current = null;
-        dispatch({ type: "answerCard", botId: bot.id, threadId: bot.threadId, messageId: openQuestion.messageId, answer: said });
+        dispatch({
+          type: "answerCard",
+          botId: bot.id,
+          threadId: bot.threadId,
+          messageId: openQuestion.messageId,
+          answer: trimmed,
+        });
         move("working");
         return;
       }
 
       move("sending");
-      dispatch({ type: "send", botId: bot.id, text: said, threadId: bot.threadId });
+      dispatch({ type: "send", botId: bot.id, text: trimmed, threadId: bot.threadId });
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [bot.id, bot.threadId, dispatch, hush, move],
+  );
+
+  const listen = useCallback(() => {
+    if (!alive.current || currentCall() !== bot.id) return;
+    move("listening");
+    setHeard("");
+    setNote(null);
+
+    if (window.ogb?.speechStart) {
+      void window.ogb.speechStart({ endpointMs: CALL_ENDPOINT_MS }).catch(() => {
+        if (alive.current && currentCall() === bot.id) {
+          setNote("The microphone couldn't start. Check Microphone and Speech Recognition access.");
+        }
+      });
+      return;
+    }
+
+    // Browser SpeechRecognition fallback
+    const w = typeof window !== "undefined" ? (window as unknown as {
+      SpeechRecognition?: new () => any;
+      webkitSpeechRecognition?: new () => any;
+    }) : {};
+    const SpeechCtor = w.SpeechRecognition || w.webkitSpeechRecognition;
+    if (SpeechCtor) {
+      try {
+        if (browserRecognition.current) {
+          try {
+            browserRecognition.current.abort();
+          } catch {
+            // ignore
+          }
+        }
+        const rec = new SpeechCtor();
+        browserRecognition.current = rec;
+        rec.continuous = false;
+        rec.interimResults = true;
+        rec.lang = navigator.language || "en-US";
+        rec.onresult = (event: any) => {
+          if (!alive.current || currentCall() !== bot.id || phaseRef.current !== "listening") return;
+          const result = event.results?.[event.resultIndex];
+          if (!result) return;
+          const text = result[0]?.transcript ?? "";
+          setHeard(text);
+          if (result.isFinal) {
+            handleSpokenText(text);
+          }
+        };
+        rec.onerror = (event: any) => {
+          if (!alive.current || currentCall() !== bot.id) return;
+          if (event.error !== "no-speech" && event.error !== "aborted") {
+            setNote(`Dictation error: ${event.error}. Check microphone permissions.`);
+          }
+        };
+        rec.onend = () => {
+          if (alive.current && currentCall() === bot.id && phaseRef.current === "listening") {
+            listen();
+          }
+        };
+        rec.start();
+      } catch {
+        if (alive.current && currentCall() === bot.id) {
+          setNote("The browser microphone couldn't start.");
+        }
+      }
+    }
+  }, [bot.id, handleSpokenText, move]);
+
+  /** Speak, with the microphone closed for the duration (see the header
+   * comment — an open mic during playback is a feedback loop). */
+  const say = useCallback(
+    async (text: string) => {
+      if (!alive.current || currentCall() !== bot.id) return false;
+      const mine = ++sayGeneration.current;
+      // Move first. stopSpeech() finishes asynchronously, and its close must
+      // never observe an old "listening" phase and reopen the mic.
+      move("speaking");
+      hush();
+      await speaker.speak(text, { botId: bot.id, voiceId: bot.voice });
+      return alive.current && currentCall() === bot.id && sayGeneration.current === mine;
+    },
+    [bot.id, bot.voice, hush, move],
+  );
+
+  const sayThenListen = useCallback(
+    async (text: string) => {
+      const stillMine = await say(text);
+      if (stillMine && phaseRef.current === "speaking") listen();
+    },
+    [listen, say],
+  );
+
+  // ── Voice Barge-In: user can interrupt by speaking over the bot ────────
+  useEffect(() => {
+    if (phase !== "speaking" || !bargeInActive) {
+      bargeInDetector.current?.stop();
+      return;
+    }
+
+    const detector = new BargeInDetector();
+    bargeInDetector.current = detector;
+
+    void detector.start(() => {
+      if (!alive.current || currentCall() !== bot.id || phaseRef.current !== "speaking") return;
+      sayGeneration.current += 1;
+      speaker.stop();
+      listen();
+    });
+
+    return () => {
+      detector.stop();
+      if (bargeInDetector.current === detector) {
+        bargeInDetector.current = null;
+      }
+    };
+  }, [phase, bargeInActive, bot.id, listen]);
+
+  // Navigating away from this bot hangs up. Without ownership checking, the
+  // overlay disappeared but `currentCall()` remained set and auto-speak was
+  // permanently disabled for a call nobody could see.
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      sayGeneration.current += 1;
+      bargeInDetector.current?.stop();
+      if (browserRecognition.current) {
+        try {
+          browserRecognition.current.abort();
+        } catch {
+          // ignore
+        }
+        browserRecognition.current = null;
+      }
+      deferCallCleanup(bot.id, () => alive.current);
+    };
+  }, [bot.id]);
+
+  // ── the microphone ───────────────────────────────────────────────────
+  useEffect(() => {
+    const bridge = window.ogb;
+    if (!bridge) {
+      if (bot.busy && !approval && !question) move("working");
+      else listen();
+      return;
+    }
+    const offTranscript = bridge.onSpeechTranscript((line) => {
+      if (!alive.current || currentCall() !== bot.id || phaseRef.current !== "listening") return;
+      if (line.error) {
+        setNote("Dictation stopped unexpectedly. Check Microphone and Speech Recognition access.");
+        return;
+      }
+      if (typeof line.text !== "string") return;
+      setHeard(line.text);
+      if (line.partial !== false) return;
+      // final result — Apple's recognizer decided the turn ended
+      const said = line.text.trim();
+      if (!said) return listen();
+      handleSpokenText(said);
     });
     const offEnd = bridge.onSpeechEnd(({ code, reason }) => {
       if (!alive.current || currentCall() !== bot.id) return;
@@ -425,7 +526,7 @@ function Call({ bot }: { bot: Bot }) {
     // busy/approval are intentionally initial snapshots. Their live changes
     // are handled below without tearing down native event listeners.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bot.id, bot.threadId, dispatch, hush, listen, move, sayThenListen]);
+  }, [bot.id, bot.threadId, dispatch, handleSpokenText, hush, listen, move, sayThenListen]);
 
   // ── narrate the work, speak the answer, read the approvals ───────────
   useEffect(() => {
@@ -567,6 +668,21 @@ function Call({ bot }: { bot: Bot }) {
         </div>
       </div>
 
+      {speech.downloadProgress !== undefined && speech.status === "preparing" && (
+        <div className="flex w-full max-w-[280px] flex-col items-center gap-1.5 px-4">
+          <div className="flex w-full items-center justify-between text-[12px] text-ink-secondary">
+            <span>{speech.downloadStatus ?? "Downloading voice model…"}</span>
+            <span className="font-mono font-medium">{speech.downloadProgress}%</span>
+          </div>
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-raised">
+            <div
+              className="h-full bg-accent transition-all duration-150"
+              style={{ width: `${Math.max(4, speech.downloadProgress)}%` }}
+            />
+          </div>
+        </div>
+      )}
+
       {/* one line, whichever is current: what you're saying, or what it is */}
       <div className="min-h-[3.5rem] max-w-[560px] px-6 text-center text-[15px] leading-relaxed text-ink">
         {phase === "listening" ? (
@@ -578,6 +694,28 @@ function Call({ bot }: { bot: Bot }) {
         ) : (
           speech.caption
         )}
+      </div>
+
+      {/* Quick character voice switcher on call */}
+      <div className="flex items-center gap-2 text-[12.5px] text-ink-secondary">
+        <span>Voice:</span>
+        <select
+          value={bot.voice || "azelma"}
+          onChange={(e) => {
+            dispatch({ type: "updateBot", botId: bot.id, patch: { voice: e.target.value } });
+          }}
+          aria-label="Select voice"
+          className="rounded-lg border border-hairline/60 bg-raised px-2.5 py-1 text-[12px] font-medium text-ink hover:bg-raised-hover focus:outline-none cursor-pointer"
+        >
+          <option value="alba">Alba (Narrator)</option>
+          <option value="azelma">Azelma (Playful)</option>
+          <option value="cosette">Cosette (Bright)</option>
+          <option value="eponine">Eponine (Lively)</option>
+          <option value="fantine">Fantine (Warm)</option>
+          <option value="javert">Javert (Authoritative)</option>
+          <option value="jean">Jean (Wise)</option>
+          <option value="marius">Marius (Spirited)</option>
+        </select>
       </div>
 
       {note && (
@@ -614,8 +752,21 @@ function Call({ bot }: { bot: Bot }) {
         </button>
       </div>
 
-      <div className="text-[11.5px] text-ink-secondary/70">
-        Hold Control + Option to talk · Space interrupts · Esc hangs up
+      <div className="flex flex-wrap items-center justify-center gap-3 text-[11.5px] text-ink-secondary/70">
+        <button
+          type="button"
+          onClick={() => setBargeInActive((prev) => !prev)}
+          className={cn(
+            "flex items-center gap-1.5 rounded-full px-2.5 py-0.5 transition-colors",
+            bargeInActive ? "bg-accent/15 text-accent font-medium" : "bg-raised text-ink-secondary hover:text-ink",
+          )}
+          title="Speak while the bot is talking to interrupt it"
+        >
+          <span className={cn("size-1.5 rounded-full", bargeInActive ? "bg-accent animate-pulse" : "bg-ink-secondary/40")} />
+          Voice barge-in: {bargeInActive ? "On" : "Off"}
+        </button>
+        <span>·</span>
+        <span>Hold Control + Option to talk · Space interrupts · Esc hangs up</span>
       </div>
     </div>
   );

@@ -4,7 +4,7 @@
 // folder is present: delete it and this file still compiles, the server still
 // starts, and /api/edition reports the open-source edition. Core never imports
 // the layer statically, so the bundle and the packaged app carry no trace of it.
-// The layer's only obligation is `register()`, which turns OMB_LICENSE_KEY into
+// The layer's only obligation is `register()`, which turns AGENTBOT_LICENSE_KEY into
 // entitlements; core keeps the resulting status and answers `entitled()`.
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -57,7 +57,7 @@ export interface WorkspaceAccess {
 }
 
 export function hostedWorkspaceConfigured(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.OMB_ADMIN_URL !== undefined || env.OMB_ADMIN_WORKSPACE !== undefined || env.OMB_ADMIN_MEMBERSHIP !== undefined;
+  return env.AGENTBOT_ADMIN_URL !== undefined || env.AGENTBOT_ADMIN_WORKSPACE !== undefined || env.AGENTBOT_ADMIN_MEMBERSHIP !== undefined;
 }
 
 /** Validate the operator's complete hosted configuration before any session
@@ -70,9 +70,9 @@ export function hostedWorkspaceConfiguration(env: NodeJS.ProcessEnv = process.en
       if (url.protocol !== "https:" || (raw !== url.origin && raw !== `${url.origin}/`)) throw new Error("invalid origin");
       return url;
     };
-    if (!/^[a-z][a-z0-9-]{1,30}$/.test(env.OMB_ADMIN_WORKSPACE ?? "")) return null;
-    if (env.OMB_ADMIN_MEMBERSHIP !== undefined && !["local", "portal"].includes(env.OMB_ADMIN_MEMBERSHIP)) return null;
-    return { admin: origin(env.OMB_ADMIN_URL), tenant: origin(env.OMB_PUBLIC_URL), workspace: env.OMB_ADMIN_WORKSPACE!, portalMembership: env.OMB_ADMIN_MEMBERSHIP === "portal" };
+    if (!/^[a-z][a-z0-9-]{1,30}$/.test(env.AGENTBOT_ADMIN_WORKSPACE ?? "")) return null;
+    if (env.AGENTBOT_ADMIN_MEMBERSHIP !== undefined && !["local", "portal"].includes(env.AGENTBOT_ADMIN_MEMBERSHIP)) return null;
+    return { admin: origin(env.AGENTBOT_ADMIN_URL), tenant: origin(env.AGENTBOT_PUBLIC_URL), workspace: env.AGENTBOT_ADMIN_WORKSPACE!, portalMembership: env.AGENTBOT_ADMIN_MEMBERSHIP === "portal" };
   } catch { return null; }
 }
 
@@ -95,13 +95,13 @@ export async function loadEnterpriseLayer(
   options: { dir?: string; licenseKey?: string } = {},
 ): Promise<EditionStatus> {
   workspaceAccessFactory = undefined;
-  const dir = options.dir ?? process.env.OMB_ENTERPRISE_DIR ?? DEFAULT_DIR;
-  const licenseKey = options.licenseKey ?? process.env.OMB_LICENSE_KEY;
+  const dir = options.dir ?? process.env.AGENTBOT_ENTERPRISE_DIR ?? DEFAULT_DIR;
+  const licenseKey = options.licenseKey ?? process.env.AGENTBOT_LICENSE_KEY;
   // Source in a checkout, a compiled bundle in an image: same convention as proxy-paths.ts.
   const entry = [join(dir, "server", "index.ts"), join(dir, "server", "index.js")].find((candidate) => existsSync(candidate));
   if (!entry) {
     return oss(
-      licenseKey ? `OMB_LICENSE_KEY is set but no enterprise layer exists at ${dir}` : undefined,
+      licenseKey ? `AGENTBOT_LICENSE_KEY is set but no enterprise layer exists at ${dir}` : undefined,
     );
   }
   try {
@@ -110,7 +110,7 @@ export async function loadEnterpriseLayer(
     if (typeof access === "function") workspaceAccessFactory = access as (options: WorkspaceAccessOptions) => WorkspaceAccess;
     const register: unknown = Reflect.get(Object(loaded), "register");
     if (typeof register !== "function") throw new Error(`${entry} does not export register()`);
-    if (!licenseKey) return oss("enterprise layer present but OMB_LICENSE_KEY is not set");
+    if (!licenseKey) return oss("enterprise layer present but AGENTBOT_LICENSE_KEY is not set");
     const registered: unknown = await register({ licenseKey });
     const layer = layerSchema.parse(registered);
     current = {
@@ -137,7 +137,7 @@ export function editionStatus(now: number = Date.now()): EditionStatus {
   return {
     edition: "oss",
     features: [],
-    notice: `enterprise layer disabled: OMB_LICENSE_KEY expired on ${current.expiresAt}; renew it to keep enterprise features`,
+    notice: `enterprise layer disabled: AGENTBOT_LICENSE_KEY expired on ${current.expiresAt}; renew it to keep enterprise features`,
   };
 }
 
@@ -151,7 +151,7 @@ export function entitled(feature: string, now: number = Date.now()): boolean {
 export function describeEdition(status: EditionStatus): string {
   if (status.edition === "enterprise") {
     const until = status.expiresAt ? ` until ${status.expiresAt}` : "";
-    return `openmausbot enterprise edition for ${status.customer}${until}: ${status.features.join(", ") || "no features"}`;
+    return `agentbot enterprise edition for ${status.customer}${until}: ${status.features.join(", ") || "no features"}`;
   }
-  return `openmausbot open-source edition${status.notice ? ` (${status.notice})` : ""}`;
+  return `agentbot open-source edition${status.notice ? ` (${status.notice})` : ""}`;
 }

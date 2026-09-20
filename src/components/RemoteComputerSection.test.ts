@@ -13,7 +13,7 @@ describe("self-hosted server pairing links", () => {
   it.each([
     "https://bots.example.com/pair#code=ABCD-EFGH-JKLM",
     " https://custom.example.com:8443/pair/#code=ABCD%2DEFGH%2DJKLM ",
-    "https://random.trycloudflare.com/pair#code=ABCDEFGHJKLM",
+    "https://random.example.com/pair#code=ABCDEFGHJKLM",
   ])("accepts a complete custom HTTPS link: %s", (link) => {
     expect(isServerPairingLink(link)).toBe(true);
   });
@@ -34,7 +34,7 @@ describe("self-hosted server pairing links", () => {
     "https://bots.example.com/pair?code=secret#code=ABCD-EFGH-JKLM",
     "https://bots.example.com/pair#code=ABCD EFGH JKLM",
     "https://bots.example.com\\@other.example/pair#code=ABCD-EFGH-JKLM",
-    "openmausbot://pair?code=123456",
+    "agentbot://pair?code=123456",
   ])("rejects an incomplete, malformed, or insecure link: %s", (link) => {
     expect(isServerPairingLink(link)).toBe(false);
   });
@@ -53,9 +53,9 @@ describe("remote connection Settings", () => {
     expect(html).toContain('<option value="server" selected="">Self-hosted server</option>');
     expect(html).toContain('<option value="companion">Desktop companion</option>');
     expect(html).toContain("Server pairing link");
-    expect(html).toContain("npx openmausbot pair --client");
+    expect(html).toContain("npx agentbot pair --client");
     expect(html).toContain("12-character code");
-    expect(html).toContain("custom domains and Cloudflare Tunnel");
+    expect(html).toContain("including custom domains");
     expect(html).toContain("Connect to server");
     expect(html).toContain("Server menu");
     expect(html).not.toContain('placeholder="000000"');
@@ -73,7 +73,7 @@ describe("remote connection Settings", () => {
     expect(html).toContain("Companion address");
     expect(html).toContain("Six-digit companion code");
     expect(html).toContain('placeholder="000000"');
-    expect(html).toContain("managed OpenMausBot HTTPS address");
+    expect(html).toContain("full Tailscale name");
     expect(html).toContain("Tailscale name ending in .ts.net");
     expect(html).not.toContain("<select");
     expect(html).not.toContain("Server pairing link");

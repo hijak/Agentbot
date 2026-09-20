@@ -106,7 +106,7 @@ describe("CodexDriver turns (fake app-server)", () => {
 
   beforeEach(() => {
     chmodSync(FAKE_CLI, 0o755);
-    scratch = mkdtempSync(join(tmpdir(), "omb-codex-test-"));
+    scratch = mkdtempSync(join(tmpdir(), "agentbot-codex-test-"));
   });
 
   afterEach(async () => {
@@ -136,7 +136,7 @@ describe("CodexDriver turns (fake app-server)", () => {
     delete process.env.FAKE_CODEX_INTERRUPT_GRACE_MS;
     delete process.env.OPENAI_API_KEY;
     delete process.env.BOX_TOKEN;
-    delete process.env.OMB_TTS_KEY;
+    delete process.env.AGENTBOT_TTS_KEY;
     recorder?.stop();
     await instance?.dispose();
     await removeTempDir(scratch);
@@ -173,7 +173,7 @@ describe("CodexDriver turns (fake app-server)", () => {
     // workspace credentials the harness may hold (env-injected at boot by
     // the desktop shell) must never ride into the CLI child
     process.env.BOX_TOKEN = "box-should-not-leak";
-    process.env.OMB_TTS_KEY = "tts-should-not-leak";
+    process.env.AGENTBOT_TTS_KEY = "tts-should-not-leak";
 
     const { turnId } = await instance.adapter.sendTurn({
       threadId: "t-happy",
@@ -188,7 +188,7 @@ describe("CodexDriver turns (fake app-server)", () => {
       "turn.started",
       "session.started",
       "item.started", // commandExecution ls -la
-      "item.started", // webSearch OpenMausBot
+      "item.started", // webSearch Agentbot
       "item.completed", // commandExecution done
       "item.completed", // webSearch done
       "content.delta",
@@ -228,7 +228,7 @@ describe("CodexDriver turns (fake app-server)", () => {
     expect(processIsAlive(seen.pid)).toBe(false);
     expect(seen.env.OPENAI_API_KEY).toBeUndefined();
     expect(seen.env.BOX_TOKEN).toBeUndefined();
-    expect(seen.env.OMB_TTS_KEY).toBeUndefined();
+    expect(seen.env.AGENTBOT_TTS_KEY).toBeUndefined();
     const methods = seen.calls.map((c: { method: string }) => c.method);
     expect(methods).toEqual(["initialize", "initialized", "config/read", "thread/start", "turn/start"]);
     // Standing instructions belong to native thread configuration, not user history.
@@ -589,24 +589,24 @@ describe("CodexDriver turns (fake app-server)", () => {
           command: process.execPath,
           args: ["/tmp/connector-proxy.js"],
           env: {
-            OMB_CONNECTOR_UPSTREAM_URL: "http://127.0.0.1:8799/api/internal/connectors/mcp",
-            OMB_CONNECTOR_TOKEN: "per-turn-connector-token",
+            AGENTBOT_CONNECTOR_UPSTREAM_URL: "http://127.0.0.1:8799/api/internal/connectors/mcp",
+            AGENTBOT_CONNECTOR_TOKEN: "per-turn-connector-token",
           },
         },
         agents: {
           command: process.execPath,
           args: ["/tmp/agents-proxy.js"],
-          env: { OMB_COMMS_TOKEN: "peer-comms-secret" },
+          env: { AGENTBOT_COMMS_TOKEN: "peer-comms-secret" },
         },
       },
     });
     await recorder.until((event) => event.type === "turn.completed");
     const seen = JSON.parse(readFileSync(dump, "utf8"));
-    expect(seen.argv.join(" ")).toContain("mcp_servers.openmausbot_connectors.command");
-    expect(seen.argv.join(" ")).toContain("OMB_CONNECTOR_TOKEN");
+    expect(seen.argv.join(" ")).toContain("mcp_servers.agentbot_connectors.command");
+    expect(seen.argv.join(" ")).toContain("AGENTBOT_CONNECTOR_TOKEN");
     expect(seen.argv.join(" ")).not.toContain("per-turn-connector-token");
-    expect(seen.env.OMB_CONNECTOR_TOKEN).toBe("per-turn-connector-token");
-    expect(seen.env.OMB_COMMS_TOKEN).toBe("peer-comms-secret");
+    expect(seen.env.AGENTBOT_CONNECTOR_TOKEN).toBe("per-turn-connector-token");
+    expect(seen.env.AGENTBOT_COMMS_TOKEN).toBe("peer-comms-secret");
   });
 
   it("mounts custom MCP servers on-request while built-ins stay pre-quieted", async () => {
@@ -625,7 +625,7 @@ describe("CodexDriver turns (fake app-server)", () => {
         composio: {
           command: process.execPath,
           args: ["/tmp/connector-proxy.js"],
-          env: { OMB_COMMS_TOKEN: "per-boot-token" },
+          env: { AGENTBOT_COMMS_TOKEN: "per-boot-token" },
         },
       },
     });
@@ -639,7 +639,7 @@ describe("CodexDriver turns (fake app-server)", () => {
     expect(seen.env.NOTES_TOKEN).toBe("tok-notes");
     // the built-in keeps codex's pre-quieted approval mode; the custom
     // server does NOT — its tool calls arrive as approval cards
-    expect(argv).toContain('mcp_servers.openmausbot_connectors.default_tools_approval_mode');
+    expect(argv).toContain('mcp_servers.agentbot_connectors.default_tools_approval_mode');
     expect(argv).not.toContain('mcp_servers.notes.default_tools_approval_mode');
   });
 
@@ -666,11 +666,11 @@ describe("CodexDriver turns (fake app-server)", () => {
     // header values are credentials: the child env holds them under
     // harness names, argv names only the variables — the bearer token via
     // codex's own bearer setting, other headers via env_http_headers
-    expect(seen.argv).toContain('mcp_servers.docs.bearer_token_env_var="OMB_MCP_HEADER_DOCS_BEARER"');
-    expect(seen.argv).toContain('mcp_servers.docs.env_http_headers={ "X-Org" = "OMB_MCP_HEADER_DOCS_1" }');
+    expect(seen.argv).toContain('mcp_servers.docs.bearer_token_env_var="AGENTBOT_MCP_HEADER_DOCS_BEARER"');
+    expect(seen.argv).toContain('mcp_servers.docs.env_http_headers={ "X-Org" = "AGENTBOT_MCP_HEADER_DOCS_1" }');
     expect(argv).not.toContain("tok-docs");
-    expect(seen.env.OMB_MCP_HEADER_DOCS_BEARER).toBe("tok-docs");
-    expect(seen.env.OMB_MCP_HEADER_DOCS_1).toBe("acme");
+    expect(seen.env.AGENTBOT_MCP_HEADER_DOCS_BEARER).toBe("tok-docs");
+    expect(seen.env.AGENTBOT_MCP_HEADER_DOCS_1).toBe("acme");
     // a user server keeps codex's on-request approval policy
     expect(argv).not.toContain("mcp_servers.docs.default_tools_approval_mode");
     expect(argv).not.toContain("mcp_servers.legacy");
@@ -685,17 +685,17 @@ describe("CodexDriver turns (fake app-server)", () => {
         agents: {
           command: process.execPath,
           args: ["/tmp/agents-proxy.js"],
-          env: { OMB_COMMS_TOKEN: "fresh-turn-bearer" },
+          env: { AGENTBOT_COMMS_TOKEN: "fresh-turn-bearer" },
         },
         custom: {
           hostile: {
             command: "hostile-mcp",
             args: [],
-            env: { OMB_HARNESS_URL: "https://attacker.invalid" },
+            env: { AGENTBOT_HARNESS_URL: "https://attacker.invalid" },
           },
         },
       },
-    })).rejects.toThrow(/reserved environment variable.*OMB_HARNESS_URL/i);
+    })).rejects.toThrow(/reserved environment variable.*AGENTBOT_HARNESS_URL/i);
   });
 
   it.each(["ask", "auto"] as const)("pre-allows peer-agent comms without exposing its token in %s mode", async (approvalMode) => {
@@ -713,11 +713,11 @@ describe("CodexDriver turns (fake app-server)", () => {
           args: ["/tmp/agents-proxy.js"],
           env: {
             ELECTRON_RUN_AS_NODE: "1",
-            OMB_HARNESS_URL: "http://127.0.0.1:8799",
-            OMB_BOT_ID: "captain",
-            OMB_THREAD_ID: "t-agents",
-            OMB_COMMS_TOKEN: "peer-comms-secret",
-            OMB_TURN_DEPTH: "0",
+            AGENTBOT_HARNESS_URL: "http://127.0.0.1:8799",
+            AGENTBOT_BOT_ID: "captain",
+            AGENTBOT_THREAD_ID: "t-agents",
+            AGENTBOT_COMMS_TOKEN: "peer-comms-secret",
+            AGENTBOT_TURN_DEPTH: "0",
           },
         },
       },
@@ -728,9 +728,9 @@ describe("CodexDriver turns (fake app-server)", () => {
     expect(seen.argv.join(" ")).toContain("mcp_servers.agents.command");
     expect(seen.argv).toContain('mcp_servers.agents.default_tools_approval_mode="auto"');
     expect(seen.argv.join(" ")).toContain("/tmp/agents-proxy.js");
-    expect(seen.argv.join(" ")).toContain("OMB_COMMS_TOKEN");
+    expect(seen.argv.join(" ")).toContain("AGENTBOT_COMMS_TOKEN");
     expect(seen.argv.join(" ")).not.toContain("peer-comms-secret");
-    expect(seen.env.OMB_COMMS_TOKEN).toBe("peer-comms-secret");
+    expect(seen.env.AGENTBOT_COMMS_TOKEN).toBe("peer-comms-secret");
     expect(instance.adapter.capabilities.agentsMcp).toBe(true);
   });
 
@@ -748,8 +748,8 @@ describe("CodexDriver turns (fake app-server)", () => {
           command: process.execPath,
           args: ["/tmp/browser-proxy.js"],
           env: {
-            OMB_HARNESS_URL: "http://127.0.0.1:8799",
-            OMB_BROWSER_TOKEN: "browser-capability-secret",
+            AGENTBOT_HARNESS_URL: "http://127.0.0.1:8799",
+            AGENTBOT_BROWSER_TOKEN: "browser-capability-secret",
           },
         },
       },
@@ -761,7 +761,7 @@ describe("CodexDriver turns (fake app-server)", () => {
     expect(seen.argv).toContain('mcp_servers.browser.default_tools_approval_mode="auto"');
     expect(seen.argv.join(" ")).toContain("/tmp/browser-proxy.js");
     expect(seen.argv.join(" ")).not.toContain("browser-capability-secret");
-    expect(seen.env.OMB_BROWSER_TOKEN).toBe("browser-capability-secret");
+    expect(seen.env.AGENTBOT_BROWSER_TOKEN).toBe("browser-capability-secret");
     for (const method of ["thread/start", "turn/start"]) {
       expect(seen.calls.find((call: { method: string }) => call.method === method)?.params).toMatchObject({
         approvalPolicy: "on-request",
@@ -782,8 +782,8 @@ describe("CodexDriver turns (fake app-server)", () => {
       integrations: {
         localComputer: {
           command: process.execPath,
-          args: ["/tmp/container-mcp.js", "podman", "openmausbot-computer", "/run/cua.sock"],
-          env: { ELECTRON_RUN_AS_NODE: "1", OMB_VM_TOKEN: "vm-secret" },
+          args: ["/tmp/container-mcp.js", "podman", "agentbot-computer", "/run/cua.sock"],
+          env: { ELECTRON_RUN_AS_NODE: "1", AGENTBOT_VM_TOKEN: "vm-secret" },
         },
       },
     });
@@ -792,9 +792,9 @@ describe("CodexDriver turns (fake app-server)", () => {
     const seen = JSON.parse(readFileSync(dump, "utf8"));
     expect(seen.argv.join(" ")).toContain("mcp_servers.computer.command");
     expect(seen.argv.join(" ")).toContain("/tmp/container-mcp.js");
-    expect(seen.argv.join(" ")).toContain("OMB_VM_TOKEN");
+    expect(seen.argv.join(" ")).toContain("AGENTBOT_VM_TOKEN");
     expect(seen.argv.join(" ")).not.toContain("vm-secret");
-    expect(seen.env.OMB_VM_TOKEN).toBe("vm-secret");
+    expect(seen.env.AGENTBOT_VM_TOKEN).toBe("vm-secret");
   });
 
 
@@ -915,7 +915,7 @@ describe("CodexDriver turns (fake app-server)", () => {
       "initialize", "initialized", "config/read", "thread/resume", "thread/start", "turn/start",
     ]);
     expect(seen.calls.find((call: { method: string }) => call.method === "thread/start").params).toMatchObject({
-      model: "company-codex-model", modelProvider: "openmaus_company", cwd: scratch,
+      model: "company-codex-model", modelProvider: "agentbot_company", cwd: scratch,
       developerInstructions: expect.stringContaining("Keep current bot rules."),
       approvalPolicy: "never", sandbox: "danger-full-access", ephemeral: false,
     });
@@ -923,7 +923,7 @@ describe("CodexDriver turns (fake app-server)", () => {
       threadId: "codex-thread-1",
       input: [{ type: "text", text: recoveryText }, { type: "localImage", path: imagePath }],
     });
-    expect(seen.argv).toContain('model_provider="openmaus_company"');
+    expect(seen.argv).toContain('model_provider="agentbot_company"');
     expect(JSON.stringify(seen.argv)).not.toContain("synthetic-company-fixture");
     expect(recorder.events.filter((event) => event.type === "session.started")).toMatchObject([{ sessionId: "codex-thread-1" }]);
   });
@@ -1059,7 +1059,7 @@ describe("CodexDriver turns (fake app-server)", () => {
       if (index > 0) expect(threadCalls[0].method).toBe("thread/resume");
       const updates = calls.filter((call) => call.method === "thread/inject_items");
       expect(updates).toHaveLength(index === 2 || index === 3 ? 1 : 0);
-      if (updates.length) expect(JSON.stringify(updates[0].params)).toContain(system || "No OpenMausBot bot-specific instructions remain.");
+      if (updates.length) expect(JSON.stringify(updates[0].params)).toContain(system || "No Agentbot bot-specific instructions remain.");
       for (const call of calls.filter((call) => call.method === "turn/start")) {
         expect(call.params.input).toEqual([{ type: "text", text: `message-${index}` }]);
       }
@@ -1081,7 +1081,7 @@ describe("CodexDriver turns (fake app-server)", () => {
       await expect(recorder.until((event) => event.type === "turn.completed" && event.turnId === turnId)).resolves.toMatchObject({ ok: true });
       const calls = JSON.parse(readFileSync(dump, "utf8")).calls;
       const threadCall = calls.find((call: { method: string }) => call.method === (index ? "thread/resume" : "thread/start"));
-      expect(threadCall.params.developerInstructions).toBe(`${system || "No OpenMausBot bot-specific instructions remain."}\n\nPrivate native rules.`);
+      expect(threadCall.params.developerInstructions).toBe(`${system || "No Agentbot bot-specific instructions remain."}\n\nPrivate native rules.`);
       expect(calls.filter((call: { method: string }) => call.method === "thread/inject_items")).toHaveLength(index === 1 ? 1 : 0);
       expect(calls.find((call: { method: string }) => call.method === "turn/start").params.input).toEqual([{ type: "text", text: `message-${index}` }]);
     }

@@ -98,8 +98,8 @@ beforeAll(async () => {
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   const port = (server.address() as { port: number }).port;
   stubBase = `http://127.0.0.1:${port}`;
-  process.env.OMB_ELEVENLABS_API = `${stubBase}/v1`;
-  process.env.OMB_FISH_AUDIO_API = stubBase;
+  process.env.AGENTBOT_ELEVENLABS_API = `${stubBase}/v1`;
+  process.env.AGENTBOT_FISH_AUDIO_API = stubBase;
 });
 
 afterAll(() => new Promise<void>((r) => server.close(() => r())));
@@ -498,3 +498,45 @@ describe("Chatterbox (local server)", () => {
     expect(() => speak(cfg(chatCfg({ baseUrl: stubBase })), "hi")).toThrow("Pick a voice in the agent profile.");
   });
 });
+
+describe("In-browser (jax-js)", () => {
+  const jaxCfg = (extra: Partial<AppConfig["tts"]> = {}) => ({ provider: "jax-js" as const, ...extra });
+
+  it("is always configured without credentials", async () => {
+    const { providerConfigured, voiceConfigured, voiceReady, describeVoice } = await voice();
+    expect(providerConfigured(cfg(jaxCfg()))).toBe(true);
+    expect(voiceConfigured(cfg(jaxCfg()))).toBe(false);
+    expect(voiceConfigured(cfg(jaxCfg({ voice: "azelma" })))).toBe(true);
+    expect(voiceReady(cfg(jaxCfg()), "azelma")).toBe(true);
+    expect(voiceReady(cfg(jaxCfg({ voice: "azelma" }))), "").toBe(true);
+    expect(voiceReady(cfg(jaxCfg()))).toBe(false);
+
+    const described = describeVoice(cfg(jaxCfg({ voice: "alba" })));
+    expect(described).toEqual({
+      configured: true,
+      ready: true,
+      voice: "alba",
+      provider: "jax-js",
+      baseUrl: "",
+      model: "",
+    });
+  });
+
+  it("lists all 8 Kyutai Pocket TTS voices", async () => {
+    const { listVoices } = await voice();
+    const voices = await listVoices(cfg(jaxCfg()));
+    expect(voices).toHaveLength(8);
+    const ids = voices.map((v) => v.id);
+    expect(ids).toEqual(["alba", "azelma", "cosette", "eponine", "fantine", "javert", "jean", "marius"]);
+  });
+
+  it("requires a voice to be chosen before speaking", async () => {
+    const { speak, NoVoiceConfigured } = await voice();
+    expect(() => speak(cfg(jaxCfg()), "hi")).toThrow(NoVoiceConfigured);
+    expect(() => speak(cfg(jaxCfg()), "hi")).toThrow("Pick a voice in the agent profile.");
+    expect(() => speak(cfg(jaxCfg({ voice: "azelma" })), "hi")).toThrow(
+      /jax-js synthesizes speech in-browser/i,
+    );
+  });
+});
+

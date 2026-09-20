@@ -1,4 +1,4 @@
-// Config + data dirs. One file, ~/.openmausbot/config.json, env fallbacks:
+// Config + data dirs. One file, ~/.agentbot/config.json, env fallbacks:
 //   { "xai": {"key":"xai-…"}, "composio": {"apiKey":"ak_…"}, "box": {"token":"…"},
 //     "instances": { "<instanceId>": {"driver":"grok", …} } }
 import { readFileSync, mkdirSync, existsSync, renameSync } from "node:fs";
@@ -296,7 +296,7 @@ const appConfigSchema = z.object({
   defaultModelSelection: defaultModelSelectionSchema.optional(),
   /** CLI-only launch preferences. Never enable remote access implicitly. */
   cliStartup: z.object({
-    access: z.enum(["local", "tunnel", "tailscale", "public-url"]),
+    access: z.enum(["local", "tailscale", "public-url"]),
     publicUrl: z.string().url().optional(),
     phone: z.enum(["ios", "android"]).optional(),
   }).optional(),
@@ -352,7 +352,7 @@ const appConfigSchema = z.object({
     key: optionalText,
     fishKey: optionalText,
     voice: optionalText,
-    provider: z.enum(["elevenlabs", "fish", "system", "chatterbox"]).optional(),
+    provider: z.enum(["elevenlabs", "fish", "system", "chatterbox", "jax-js"]).optional(),
     baseUrl: z
       .string()
       .trim()
@@ -416,7 +416,7 @@ export interface AppConfig {
   /** Preferred selection for newly created bots; existing bots keep theirs. */
   defaultModelSelection?: ModelSelection;
   cliStartup?: {
-    access: "local" | "tunnel" | "tailscale" | "public-url";
+    access: "local" | "tailscale" | "public-url";
     publicUrl?: string;
     phone?: "ios" | "android";
   };
@@ -432,7 +432,7 @@ export interface AppConfig {
   /** A named host from the user's SSH config. Authentication stays with SSH. */
   vps?: { sshAlias?: string };
   opencodeGo?: { apiKey?: string };
-  tts?: { key?: string; fishKey?: string; voice?: string; provider?: "elevenlabs" | "fish" | "system" | "chatterbox"; baseUrl?: string; model?: string };
+  tts?: { key?: string; fishKey?: string; voice?: string; provider?: "elevenlabs" | "fish" | "system" | "chatterbox" | "jax-js"; baseUrl?: string; model?: string };
   imageGen?: ImageGenerationConfig;
   profile?: { name?: string; email?: string };
   rooms?: { turnTimeoutMinutes: number; handoffLifetimeMinutes?: number; handoffMinRunwayMinutes?: number; handoffHardCapMinutes?: number };
@@ -611,7 +611,7 @@ export function skillAuthoringEnabled(cfg: AppConfig): boolean {
 }
 
 export function showToolCallsEnabled(cfg: AppConfig): boolean {
-  return cfg.features?.showToolCalls === true;
+  return cfg.features?.showToolCalls !== false;
 }
 
 /** Workspace-level gate for the experimental built-in browser. A bot's own
@@ -627,7 +627,7 @@ export function builtInBrowserEnabled(cfg: AppConfig): boolean {
  *
  * Deliberately NOT a Settings toggle: this is a maintainer-only escape hatch
  * for an unfinished feature, not a user preference. Someone who needs it
- * enables it by hand in `~/.openmausbot/config.json`
+ * enables it by hand in `~/.agentbot/config.json`
  * (`{"features": {"sharedComputers": true}}`) and restarts the server. */
 export function sharedComputersEnabled(cfg: AppConfig): boolean {
   return cfg.features?.sharedComputers === true;
@@ -666,8 +666,8 @@ export function providerReloadKeys(patch: object): string[] {
   return Object.keys(patch).filter((key) => !FLEET_NEUTRAL_KEYS.has(key));
 }
 
-// OMB_DATA_DIR isolates test/soak rigs from the user's real fleet.
-export const DATA_DIR = process.env.OMB_DATA_DIR ?? join(homedir(), ".openmausbot");
+// AGENTBOT_DATA_DIR isolates test/soak rigs from the user's real fleet.
+export const DATA_DIR = process.env.AGENTBOT_DATA_DIR ?? join(homedir(), ".agentbot");
 const LEGACY_DATA_DIR = join(homedir(), ".opengrokbot");
 export const EVENTS_DIR = join(DATA_DIR, "events");
 export const NATIVE_DIR = join(DATA_DIR, "native");
@@ -733,8 +733,8 @@ export function loadConfig(): AppConfig {
   // never the workspace key, so an operator's stray variable cannot flip
   // every Claude bot onto pay-as-you-go billing.
   cfg.anthropic = { ...cfg.anthropic };
-  if (process.env.OMB_ANTHROPIC_API_KEY !== undefined) cfg.anthropic.key = process.env.OMB_ANTHROPIC_API_KEY;
-  if (process.env.OMB_ANTHROPIC_API_URL !== undefined) cfg.anthropic.url = process.env.OMB_ANTHROPIC_API_URL;
+  if (process.env.AGENTBOT_ANTHROPIC_API_KEY !== undefined) cfg.anthropic.key = process.env.AGENTBOT_ANTHROPIC_API_KEY;
+  if (process.env.AGENTBOT_ANTHROPIC_API_URL !== undefined) cfg.anthropic.url = process.env.AGENTBOT_ANTHROPIC_API_URL;
   cfg.openaiCompat = { ...cfg.openaiCompat };
   if (process.env.OPENAI_COMPAT_API_KEY !== undefined) cfg.openaiCompat.key = process.env.OPENAI_COMPAT_API_KEY;
   if (process.env.OPENAI_COMPAT_URL !== undefined) cfg.openaiCompat.url = process.env.OPENAI_COMPAT_URL;
@@ -747,18 +747,18 @@ export function loadConfig(): AppConfig {
   cfg.opencodeGo = { ...cfg.opencodeGo };
   if (process.env.OPENCODE_API_KEY !== undefined) cfg.opencodeGo.apiKey = process.env.OPENCODE_API_KEY;
   cfg.tts = { ...cfg.tts };
-  if (process.env.OMB_TTS_KEY !== undefined) cfg.tts.key = process.env.OMB_TTS_KEY;
-  if (process.env.OMB_FISH_AUDIO_API_KEY !== undefined) cfg.tts.fishKey = process.env.OMB_FISH_AUDIO_API_KEY;
+  if (process.env.AGENTBOT_TTS_KEY !== undefined) cfg.tts.key = process.env.AGENTBOT_TTS_KEY;
+  if (process.env.AGENTBOT_FISH_AUDIO_API_KEY !== undefined) cfg.tts.fishKey = process.env.AGENTBOT_FISH_AUDIO_API_KEY;
   cfg.imageGen = { ...cfg.imageGen };
-  if (process.env.OMB_OPENAI_IMAGE_KEY !== undefined) cfg.imageGen.key = process.env.OMB_OPENAI_IMAGE_KEY;
-  if (process.env.OMB_CUSTOM_IMAGE_KEY !== undefined) cfg.imageGen.customApiKey = process.env.OMB_CUSTOM_IMAGE_KEY;
+  if (process.env.AGENTBOT_OPENAI_IMAGE_KEY !== undefined) cfg.imageGen.key = process.env.AGENTBOT_OPENAI_IMAGE_KEY;
+  if (process.env.AGENTBOT_CUSTOM_IMAGE_KEY !== undefined) cfg.imageGen.customApiKey = process.env.AGENTBOT_CUSTOM_IMAGE_KEY;
   // The sign-in allow-list: env is how a headless box or a container is
   // bootstrapped before anyone can reach Settings.
   const splitEmails = (value: string) => value.split(/[,\s]+/).map((entry) => entry.trim().toLowerCase()).filter(Boolean);
-  if (process.env.OMB_SIGNIN_EMAILS !== undefined || process.env.OMB_SIGNIN_MEMBER_EMAILS !== undefined) {
+  if (process.env.AGENTBOT_SIGNIN_EMAILS !== undefined || process.env.AGENTBOT_SIGNIN_MEMBER_EMAILS !== undefined) {
     cfg.signIn = { ...cfg.signIn };
-    if (process.env.OMB_SIGNIN_EMAILS !== undefined) cfg.signIn.admins = splitEmails(process.env.OMB_SIGNIN_EMAILS);
-    if (process.env.OMB_SIGNIN_MEMBER_EMAILS !== undefined) cfg.signIn.members = splitEmails(process.env.OMB_SIGNIN_MEMBER_EMAILS);
+    if (process.env.AGENTBOT_SIGNIN_EMAILS !== undefined) cfg.signIn.admins = splitEmails(process.env.AGENTBOT_SIGNIN_EMAILS);
+    if (process.env.AGENTBOT_SIGNIN_MEMBER_EMAILS !== undefined) cfg.signIn.members = splitEmails(process.env.AGENTBOT_SIGNIN_MEMBER_EMAILS);
   }
   return cfg;
 }
@@ -773,15 +773,15 @@ export function loadConfig(): AppConfig {
 export function syncCredentialEnv(patch: Partial<AppConfig>): void {
   const secrets: Array<[value: string | undefined, name: string]> = [
     [patch.xai?.key, "XAI_API_KEY"],
-    [patch.anthropic?.key, "OMB_ANTHROPIC_API_KEY"],
+    [patch.anthropic?.key, "AGENTBOT_ANTHROPIC_API_KEY"],
     [patch.openaiCompat?.key, "OPENAI_COMPAT_API_KEY"],
     [patch.composio?.apiKey, "COMPOSIO_API_KEY"],
     [patch.box?.token, "BOX_TOKEN"],
     [patch.opencodeGo?.apiKey, "OPENCODE_API_KEY"],
-    [patch.tts?.key, "OMB_TTS_KEY"],
-    [patch.tts?.fishKey, "OMB_FISH_AUDIO_API_KEY"],
-    [patch.imageGen?.key, "OMB_OPENAI_IMAGE_KEY"],
-    [patch.imageGen?.customApiKey, "OMB_CUSTOM_IMAGE_KEY"],
+    [patch.tts?.key, "AGENTBOT_TTS_KEY"],
+    [patch.tts?.fishKey, "AGENTBOT_FISH_AUDIO_API_KEY"],
+    [patch.imageGen?.key, "AGENTBOT_OPENAI_IMAGE_KEY"],
+    [patch.imageGen?.customApiKey, "AGENTBOT_CUSTOM_IMAGE_KEY"],
   ];
   for (const [value, name] of secrets) {
     if (value === undefined) continue;
@@ -792,7 +792,7 @@ export function syncCredentialEnv(patch: Partial<AppConfig>): void {
   // must follow the same set-when-truthy / delete-when-cleared rule as keys.
   const settings: Array<[value: string | undefined, name: string]> = [
     [patch.openaiCompat?.url, "OPENAI_COMPAT_URL"],
-    [patch.anthropic?.url, "OMB_ANTHROPIC_API_URL"],
+    [patch.anthropic?.url, "AGENTBOT_ANTHROPIC_API_URL"],
     [patch.openaiCompat?.model, "OPENAI_COMPAT_MODEL"],
     [patch.openaiCompat?.provider, "OPENAI_COMPAT_PROVIDER"],
   ];
@@ -810,23 +810,23 @@ export function syncCredentialEnv(patch: Partial<AppConfig>): void {
  * child these are someone else's keys riding along in `...process.env`. */
 export const WORKSPACE_CREDENTIAL_ENV = [
   "XAI_API_KEY",
-  "OMB_ANTHROPIC_API_KEY",
-  "OMB_ANTHROPIC_API_URL",
+  "AGENTBOT_ANTHROPIC_API_KEY",
+  "AGENTBOT_ANTHROPIC_API_URL",
   "OPENAI_COMPAT_API_KEY",
   "OPENAI_COMPAT_URL",
   "BOX_TOKEN",
   "OPENCODE_API_KEY",
-  "OMB_TTS_KEY",
-  "OMB_FISH_AUDIO_API_KEY",
-  "OMB_OPENAI_IMAGE_KEY",
-  "OMB_CUSTOM_IMAGE_KEY",
+  "AGENTBOT_TTS_KEY",
+  "AGENTBOT_FISH_AUDIO_API_KEY",
+  "AGENTBOT_OPENAI_IMAGE_KEY",
+  "AGENTBOT_CUSTOM_IMAGE_KEY",
   "COMPOSIO_API_KEY",
-  "OMB_COMPOSIO_BROKER_TOKEN",
+  "AGENTBOT_COMPOSIO_BROKER_TOKEN",
   // Harness-private filesystem hints are not credentials themselves, but
   // exposing them to a shell-capable agent points straight at app-owned
   // state. The built-in browser master is delivered privately in memory.
-  "OMB_BROWSER_CONNECTION",
-  "OMB_USER_DATA",
+  "AGENTBOT_BROWSER_CONNECTION",
+  "AGENTBOT_USER_DATA",
 ] as const;
 
 /** Drop every workspace credential from a child-process env (in place). */
@@ -853,7 +853,7 @@ export const PROVIDER_CREDENTIAL_ENV = [
   "CURSOR_AUTH_TOKEN",
 ] as const;
 
-/** Merge a partial config into ~/.openmausbot/config.json (secrets never
+/** Merge a partial config into ~/.agentbot/config.json (secrets never
  * echoed back — callers report configured-or-not booleans only). */
 export function saveConfig(patch: Partial<AppConfig>, options: { replaceInstances?: boolean } = {}): void {
   const p = join(DATA_DIR, "config.json");

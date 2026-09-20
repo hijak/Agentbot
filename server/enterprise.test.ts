@@ -10,7 +10,7 @@ const dirs: string[] = [];
 
 /** A stand-in enterprise layer: the folder shape core looks for, with the given register(). */
 function fakeLayer(registerSource: string, file = "index.ts"): string {
-  const dir = mkdtempSync(join(tmpdir(), "omb-enterprise-"));
+  const dir = mkdtempSync(join(tmpdir(), "agentbot-enterprise-"));
   mkdirSync(join(dir, "server"));
   writeFileSync(join(dir, "server", file), registerSource);
   dirs.push(dir);
@@ -18,32 +18,32 @@ function fakeLayer(registerSource: string, file = "index.ts"): string {
 }
 
 afterEach(async () => {
-  await loadEnterpriseLayer({ dir: join(tmpdir(), "omb-enterprise-absent"), licenseKey: undefined });
+  await loadEnterpriseLayer({ dir: join(tmpdir(), "agentbot-enterprise-absent"), licenseKey: undefined });
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
 describe("enterprise hook point", () => {
   it("does not create a hosted bridge unless opted in, and marks partial configuration as hosted", () => {
     expect(hostedWorkspaceConfigured({})).toBe(false);
-    expect(hostedWorkspaceConfigured({ OMB_PUBLIC_URL: "https://legacy.example.test" })).toBe(false);
-    expect(hostedWorkspaceConfigured({ OMB_ADMIN_URL: "" })).toBe(true);
-    expect(hostedWorkspaceConfigured({ OMB_ADMIN_WORKSPACE: "acme" })).toBe(true);
-    expect(hostedWorkspaceConfigured({ OMB_ADMIN_MEMBERSHIP: "portal" })).toBe(true);
+    expect(hostedWorkspaceConfigured({ AGENTBOT_PUBLIC_URL: "https://legacy.example.test" })).toBe(false);
+    expect(hostedWorkspaceConfigured({ AGENTBOT_ADMIN_URL: "" })).toBe(true);
+    expect(hostedWorkspaceConfigured({ AGENTBOT_ADMIN_WORKSPACE: "acme" })).toBe(true);
+    expect(hostedWorkspaceConfigured({ AGENTBOT_ADMIN_MEMBERSHIP: "portal" })).toBe(true);
     const dir = fakeLayer("export const fixture = true;");
     const sessions = new SessionRegistry({ file: join(dir, "sessions.json") });
     expect(createWorkspaceAccess({ sessions, cookieName: "session", closeSessionStreams() {}, env: {} })).toBeNull();
-    expect(createWorkspaceAccess({ sessions, cookieName: "session", closeSessionStreams() {}, env: { OMB_ADMIN_WORKSPACE: "acme" } })).toBeNull();
+    expect(createWorkspaceAccess({ sessions, cookieName: "session", closeSessionStreams() {}, env: { AGENTBOT_ADMIN_WORKSPACE: "acme" } })).toBeNull();
   });
   it("requires complete valid hosted configuration before opting into portal membership", () => {
-    const env = { OMB_ADMIN_URL: "https://admin.example.test", OMB_ADMIN_WORKSPACE: "acme", OMB_PUBLIC_URL: "https://acme.example.test" };
+    const env = { AGENTBOT_ADMIN_URL: "https://admin.example.test", AGENTBOT_ADMIN_WORKSPACE: "acme", AGENTBOT_PUBLIC_URL: "https://acme.example.test" };
     expect(hostedWorkspaceConfiguration(env)?.portalMembership).toBe(false);
-    expect(hostedWorkspaceConfiguration({ ...env, OMB_ADMIN_MEMBERSHIP: "portal" })?.portalMembership).toBe(true);
-    expect(hostedWorkspaceConfiguration({ ...env, OMB_ADMIN_MEMBERSHIP: "local" })?.portalMembership).toBe(false);
-    for (const patch of [{ OMB_ADMIN_URL: "" }, { OMB_PUBLIC_URL: "http://acme.example.test" }, { OMB_ADMIN_WORKSPACE: "" }, { OMB_ADMIN_MEMBERSHIP: "PORTAL" }]) {
-      expect(hostedWorkspaceConfiguration({ ...env, OMB_ADMIN_MEMBERSHIP: "portal", ...patch })).toBeNull();
+    expect(hostedWorkspaceConfiguration({ ...env, AGENTBOT_ADMIN_MEMBERSHIP: "portal" })?.portalMembership).toBe(true);
+    expect(hostedWorkspaceConfiguration({ ...env, AGENTBOT_ADMIN_MEMBERSHIP: "local" })?.portalMembership).toBe(false);
+    for (const patch of [{ AGENTBOT_ADMIN_URL: "" }, { AGENTBOT_PUBLIC_URL: "http://acme.example.test" }, { AGENTBOT_ADMIN_WORKSPACE: "" }, { AGENTBOT_ADMIN_MEMBERSHIP: "PORTAL" }]) {
+      expect(hostedWorkspaceConfiguration({ ...env, AGENTBOT_ADMIN_MEMBERSHIP: "portal", ...patch })).toBeNull();
     }
     const dir = fakeLayer("export const fixture = true;");
-    const invalid = { OMB_ADMIN_MEMBERSHIP: "portal" };
+    const invalid = { AGENTBOT_ADMIN_MEMBERSHIP: "portal" };
     const sessions = new SessionRegistry({ file: join(dir, "sessions.json"), portalMembership: hostedWorkspaceConfiguration(invalid)?.portalMembership === true });
     const issued = sessions.issuePortal({ email: "member@example.test", grant: "g".repeat(43), scopes: ["client"] });
     expect(sessions.authenticate(issued.token)).toBeNull();
@@ -57,19 +57,19 @@ describe("enterprise hook point", () => {
     `);
     await loadEnterpriseLayer({ dir, licenseKey: "fixture" });
     const sessions = new SessionRegistry({ file: join(dir, "sessions.json") });
-    const bridge = createWorkspaceAccess({ sessions, cookieName: "session", closeSessionStreams() {}, env: { OMB_ADMIN_WORKSPACE: "acme" } });
+    const bridge = createWorkspaceAccess({ sessions, cookieName: "session", closeSessionStreams() {}, env: { AGENTBOT_ADMIN_WORKSPACE: "acme" } });
     expect(await bridge!.handlePublic(null as never, null as never, null as never)).toBe(true);
     await loadEnterpriseLayer({ dir: join(dir, "absent") });
     expect(await bridge!.handlePublic(null as never, null as never, null as never)).toBe(false);
   });
   it("is the open-source edition when the folder is absent, and says so if a key was set anyway", async () => {
-    const absent = join(tmpdir(), "omb-enterprise-absent");
+    const absent = join(tmpdir(), "agentbot-enterprise-absent");
     expect(await loadEnterpriseLayer({ dir: absent, licenseKey: undefined })).toEqual({ edition: "oss", features: [] });
     const status = await loadEnterpriseLayer({ dir: absent, licenseKey: "omb1.x.y" });
     expect(status.edition).toBe("oss");
-    expect(status.notice).toContain("OMB_LICENSE_KEY is set but no enterprise layer exists");
+    expect(status.notice).toContain("AGENTBOT_LICENSE_KEY is set but no enterprise layer exists");
     expect(entitled("whitelabel")).toBe(false);
-    expect(describeEdition(status)).toContain("open-source edition (OMB_LICENSE_KEY is set");
+    expect(describeEdition(status)).toContain("open-source edition (AGENTBOT_LICENSE_KEY is set");
   });
 
   it("registers the layer's entitlements from the key", async () => {
@@ -82,14 +82,14 @@ describe("enterprise hook point", () => {
     expect(editionStatus()).toEqual(status);
     expect(entitled("whitelabel")).toBe(true);
     expect(entitled("budgets")).toBe(false);
-    expect(describeEdition(status)).toBe("openmausbot enterprise edition for Acme until 2027-01-01: sso, whitelabel");
+    expect(describeEdition(status)).toBe("agentbot enterprise edition for Acme until 2027-01-01: sso, whitelabel");
   });
 
   it("loads a compiled layer (server/index.js) the way an image ships it", async () => {
     const dir = fakeLayer(`export function register() { return { customer: "Built", features: ["admin"], expiresAt: null }; }`, "index.js");
     const status = await loadEnterpriseLayer({ dir, licenseKey: "k" });
     expect(status).toEqual({ edition: "enterprise", customer: "Built", features: ["admin"], expiresAt: null });
-    expect(describeEdition(status)).toBe("openmausbot enterprise edition for Built: admin");
+    expect(describeEdition(status)).toBe("agentbot enterprise edition for Built: admin");
   });
 
   it("stops granting features the moment the license expires, without a restart", async () => {
@@ -116,7 +116,7 @@ describe("enterprise hook point", () => {
   it("tells the operator when the layer is present but no key is configured", async () => {
     const dir = fakeLayer(`export function register() { return { customer: "x", features: [], expiresAt: null }; }`);
     const status = await loadEnterpriseLayer({ dir, licenseKey: undefined });
-    expect(status).toEqual({ edition: "oss", features: [], notice: "enterprise layer present but OMB_LICENSE_KEY is not set" });
+    expect(status).toEqual({ edition: "oss", features: [], notice: "enterprise layer present but AGENTBOT_LICENSE_KEY is not set" });
   });
 
   it("refuses a layer that does not honour the contract", async () => {

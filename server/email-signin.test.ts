@@ -90,12 +90,12 @@ async function openEvents(cookie: string) {
 
 beforeAll(async () => {
   stub = await startControlPlaneStub();
-  home = mkdtempSync(join(tmpdir(), "omb-email-signin-"));
+  home = mkdtempSync(join(tmpdir(), "agentbot-email-signin-"));
   const staticDir = join(home, "static");
-  mkdirSync(join(home, ".openmausbot"), { recursive: true });
+  mkdirSync(join(home, ".agentbot"), { recursive: true });
   mkdirSync(join(staticDir, "assets"), { recursive: true });
   writeFileSync(join(staticDir, "index.html"), "<!doctype html><title>Served UI</title>");
-  writeFileSync(join(home, ".openmausbot", "config.json"), JSON.stringify({
+  writeFileSync(join(home, ".agentbot", "config.json"), JSON.stringify({
     instances: { fixture: { driver: "email-signin-test-shadow" } },
     signIn: { admins: ["her@example.test", "@agentada.test"], members: ["staff@example.test"] },
   }));
@@ -106,14 +106,14 @@ beforeAll(async () => {
       ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
       HOME: home,
       USERPROFILE: home,
-      OMB_PORT: String(PORT),
-      OMB_WEBHOOK_PORT: String(PORT + 1),
-      OMB_STATIC_DIR: staticDir,
-      OMB_PUBLIC_URL: `https://${HOST}`,
-      OMB_ENVIRONMENT_LABEL: "agentada",
-      OMB_BROWSER_CONNECTION: join(home, "browser-test-connection.json"),
-      OMB_CONTROL_PLANE_URL: stub.url,
-      OMB_SSE_HEARTBEAT_MS: "50",
+      AGENTBOT_PORT: String(PORT),
+      AGENTBOT_WEBHOOK_PORT: String(PORT + 1),
+      AGENTBOT_STATIC_DIR: staticDir,
+      AGENTBOT_PUBLIC_URL: `https://${HOST}`,
+      AGENTBOT_ENVIRONMENT_LABEL: "agentada",
+      AGENTBOT_BROWSER_CONNECTION: join(home, "browser-test-connection.json"),
+      AGENTBOT_CONTROL_PLANE_URL: stub.url,
+      AGENTBOT_SSE_HEARTBEAT_MS: "50",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -139,7 +139,7 @@ afterAll(async () => {
 
 describe("sign in with your email on a hosted server", () => {
   it("advertises the option in the public descriptor", async () => {
-    const descriptor = await call("/.well-known/openmausbot/environment");
+    const descriptor = await call("/.well-known/agentbot/environment");
     expect(descriptor.status).toBe(200);
     expect(descriptor.body.capabilities.emailSignIn).toBe(true);
   });
@@ -262,7 +262,7 @@ describe("sign in with your email on a hosted server", () => {
   it("ends an idle email stream after an external allow-list removal and never revives the old cookie", async () => {
     const cookie = await signIn("staff@example.test");
     const stream = await openEvents(cookie);
-    const configPath = join(home, ".openmausbot", "config.json");
+    const configPath = join(home, ".agentbot", "config.json");
     const config = JSON.parse(readFileSync(configPath, "utf8"));
     try {
       // The fleet agent and CLI update this file outside the running server.

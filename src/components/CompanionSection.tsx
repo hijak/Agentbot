@@ -1,9 +1,7 @@
 import { useRef } from "react";
 import { t } from "@/lib/i18n";
 import {
-  Cloud,
   Loader2,
-  LogOut,
   ShieldCheck,
   Smartphone,
   Trash2,
@@ -11,10 +9,8 @@ import {
 } from "lucide-react";
 import {
   PhoneSetupFlowView,
-  companionAccountActionError,
   companionBridge,
   loadCompanionBridgeState,
-  shouldHydrateCompanionEmail,
   type CompanionState,
   type PhoneSetupController,
   usePhoneSetupController,
@@ -25,10 +21,8 @@ import { Card, Switch } from "./SettingsPrimitives";
 import { brand } from "../lib/brand";
 
 export {
-  companionAccountActionError,
   companionPairingMode,
   loadCompanionBridgeState,
-  shouldHydrateCompanionEmail,
 };
 
 export interface CompanionPanelStatus {
@@ -157,7 +151,6 @@ export function CompanionSection({ profileEmail = "" }: { profileEmail?: string 
 
   const pairedCount = state.devices.length;
   const panelStatus = deriveCompanionPanelStatus(state);
-  const accountActionError = companionAccountActionError(c.account, c.accountError);
   const pairingCopy = pairingSurfaceCopy(c);
   const tailscaleStatus = deriveTailscalePairingStatus(state, c.tailscaleAvailable);
   const hosted = state.endpoints?.find((endpoint) => endpoint.kind === "hosted");
@@ -222,7 +215,7 @@ export function CompanionSection({ profileEmail = "" }: { profileEmail?: string 
         </div>
         {tailscaleStatus.kind === "ready" ? (
           <button
-            disabled={c.busy || c.accountBusy}
+            disabled={c.busy}
             onClick={() => {
               c.useTailscale();
               window.requestAnimationFrame(() => {
@@ -236,7 +229,7 @@ export function CompanionSection({ profileEmail = "" }: { profileEmail?: string 
           </button>
         ) : (
           <button
-            disabled={c.busy || c.accountBusy}
+            disabled={c.busy}
             onClick={c.refreshTailscale}
             className="mt-3 rounded-lg border border-hairline/40 px-3 py-1.5 text-[12px] text-ink hover:bg-control disabled:opacity-40"
           >
@@ -332,47 +325,6 @@ export function CompanionSection({ profileEmail = "" }: { profileEmail?: string 
           </div>
 
           <div className="border-t border-hairline/30 pt-4">
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex min-w-0 items-start gap-2.5">
-                <Cloud size={15} className="mt-0.5 shrink-0 text-accent" />
-                <div className="min-w-0">
-                  <div className="text-[13px] text-ink">{t("remote.account.title")}</div>
-                  <div className="mt-0.5 text-[11.5px] leading-relaxed text-ink-secondary">
-                    {c.account?.status === "ready"
-                      ? t("remote.account.signedIn", {
-                          email: c.account.email ?? t("remote.account.yourAccount"),
-                        })
-                      : c.account?.status === "connecting"
-                        ? t("remote.account.connecting")
-                        : c.account?.status === "error"
-                          ? c.account.message ?? t("remote.account.error")
-                          : t("remote.account.idle")}
-                  </div>
-                </div>
-              </div>
-              {(c.account?.status === "ready" || c.account?.status === "connecting" || c.account?.status === "error") && (
-                <button
-                  disabled={c.accountBusy}
-                  onClick={() => void c.accountAct((remote) => remote.signOut())}
-                  className="flex shrink-0 items-center gap-1.5 rounded-lg border border-hairline/40 px-2.5 py-1.5 text-[11.5px] text-ink-secondary hover:bg-control hover:text-ink disabled:opacity-40"
-                >
-                  <LogOut size={12} /> {t("remote.account.signOut")}
-                </button>
-              )}
-            </div>
-            {c.account?.status === "error" && (
-              <button
-                disabled={c.accountBusy}
-                onClick={c.retryAccount}
-                className="mt-3 rounded-lg border border-hairline/40 px-3 py-1.5 text-[12px] text-ink hover:bg-control disabled:opacity-40"
-              >
-                {c.accountBusy ? t("remote.account.retrying") : t("remote.account.retry")}
-              </button>
-            )}
-            {accountActionError && <div className="mt-2 text-[12px] text-danger">{accountActionError}</div>}
-          </div>
-
-          <div className="border-t border-hairline/30 pt-4">
             <div className="text-[13px] text-ink">{t("remote.connection.title")}</div>
             <div className="mt-0.5 text-[11.5px] text-ink-secondary">
               {t("remote.connection.detail")}
@@ -397,7 +349,7 @@ export function CompanionSection({ profileEmail = "" }: { profileEmail?: string 
               </div>
             </div>
             <button
-              disabled={c.busy || c.accountBusy}
+              disabled={c.busy}
               onClick={c.useLocal}
               className="mt-3 rounded-lg border border-hairline/40 px-3 py-1.5 text-[12px] text-ink hover:bg-control disabled:opacity-40"
             >

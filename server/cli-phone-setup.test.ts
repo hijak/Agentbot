@@ -2,11 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { CliOptions } from "./cli.ts";
 import { SetupCancelled, type SetupIo } from "./cli-prompts.ts";
-import { normalizePhoneOrigin, phonePairingInstructions, runPhoneSetup, type PhoneSetupDependencies } from "./cli-phone-setup.ts";
+import { normalizePhoneOrigin, phonePairingInstructions, runPhoneSetup } from "./cli-phone-setup.ts";
 
 const options: CliOptions = {
   command: "start", port: 18799, dataDir: "/fixture/phone-home", tailscale: false,
-  tunnel: false, pair: false, client: false, json: false,
+  pair: false, client: false, json: false,
 };
 
 function prompts(script: { choices?: Array<number | Error>; confirms?: boolean[]; answers?: Array<string | Error> } = {}) {
@@ -33,13 +33,6 @@ function prompts(script: { choices?: Array<number | Error>; confirms?: boolean[]
   return { io, lines, consumed: () => expect([choices, confirms, answers]).toEqual([[], [], []]) };
 }
 
-function dependencies() {
-  return {
-    accountReady: vi.fn<NonNullable<PhoneSetupDependencies["accountReady"]>>().mockReturnValue(false),
-    login: vi.fn<PhoneSetupDependencies["login"]>().mockResolvedValue(0),
-  };
-}
-
 beforeEach(() => {
   vi.stubGlobal("fetch", vi.fn(() => { throw new Error("Phone setup fixtures must not use the network"); }));
 });
@@ -63,151 +56,80 @@ describe("phone origin validation", () => {
     "https://[::ffff:0.0.0.0]", "https://user:password@maus.example", "https://maus.example/pair",
     "https://maus.example/?token=secret", "https://maus.example/#code=ABCD-EFGH-JKLM",
     "https://maus.example/?", "https://maus.example/#", "https://maus.\nexample",
-    "https://maus.example\\private", "openmausbot://pair?token=secret",
+    "https://maus.example\\private", "agentbot://pair?token=secret",
   ])("rejects a local, credential-bearing or non-origin input: %s", (input) => {
     expect(normalizePhoneOrigin(input)).toBeNull();
   });
 });
 
 describe("optional phone setup", () => {
-  it("defaults to skipping without account access or changes", async () => {
-    const deps = dependencies();
+  it("defaults to skipping without changes", async () => {
     const ui = prompts({ choices: [0] });
-    const result = await runPhoneSetup(options, ui.io, deps);
+    const result = await runPhoneSetup(options, ui.io);
     expect(result).toEqual({ options });
     expect(result.options).toBe(options);
-    expect(ui.io.choose).toHaveBeenCalledWith("Use OpenMausBot on your phone?", expect.any(Array), 0);
-    expect(deps.accountReady).not.toHaveBeenCalled();
-    expect(deps.login).not.toHaveBeenCalled();
+    expect(ui.io.choose).toHaveBeenCalledWith("Use Agentbot on your phone?", expect.any(Array), 0);
     ui.consumed();
   });
 
-  it("requires explicit public exposure/download consent before managed sign-in", async () => {
-    const deps = dependencies();
-    const ui = prompts({ choices: [1, 0], confirms: [true] });
-    const original = { ...options };
-    expect(await runPhoneSetup(options, ui.io, deps)).toEqual({
-      phone: "ios", options: { ...options, tunnel: true, publicUrl: undefined, client: true, pair: true },
-    });
-    expect(options).toEqual(original);
-    expect(deps.login).toHaveBeenCalledWith(options, ui.io);
-    expect(ui.io.confirm).toHaveBeenCalledWith(expect.stringContaining("public endpoint"), false);
-    expect(vi.mocked(ui.io.confirm).mock.invocationCallOrder[0]).toBeLessThan(deps.accountReady.mock.invocationCallOrder[0]!);
-    expect(ui.lines.join("\n")).toContain("basic server identity are public");
-    expect(ui.lines.join("\n")).toContain("download the Cloudflare connector");
+  it("declining Tailscale consent returns to routes and may skip", async () => {
+    const ui = prompts({ choices: [2, 0, 3], confirms: [false] });
+    expect(await runPhoneSetup(options, ui.io)).toEqual({ options });
+    expect(ui.io.confirm).toHaveBeenCalledWith(expect.stringContaining("tailnet"), false);
     ui.consumed();
   });
 
-  it("declining exposure returns to routes and may skip without sign-in", async () => {
-    const deps = dependencies();
-    const ui = prompts({ choices: [2, 0, 4], confirms: [false] });
-    expect(await runPhoneSetup(options, ui.io, deps)).toEqual({ options });
-    expect(deps.accountReady).not.toHaveBeenCalled();
-    expect(deps.login).not.toHaveBeenCalled();
-    ui.consumed();
-  });
-
-  it("reuses an existing account after consent without another email", async () => {
-    const deps = dependencies();
-    deps.accountReady.mockReturnValue(true);
+  it("supports existing Tailscale only after consent, without installing it", async () => {
     const ui = prompts({ choices: [2, 0], confirms: [true] });
-    expect((await runPhoneSetup(options, ui.io, deps)).phone).toBe("android");
-    expect(deps.login).not.toHaveBeenCalled();
-    expect(ui.lines.join("\n")).toContain("saved OpenMausBot account");
-    ui.consumed();
-  });
-
-  it.each([1, new Error("secret-token-never-print")])("does not select managed access after failed sign-in: %s", async (failure) => {
-    const deps = dependencies();
-    if (failure instanceof Error) deps.login.mockRejectedValue(failure);
-    else deps.login.mockResolvedValue(failure);
-    const ui = prompts({ choices: [1, 0], confirms: [true] });
-    expect(await runPhoneSetup(options, ui.io, deps)).toEqual({ options });
-    expect(ui.lines.join("\n")).not.toContain("secret-token-never-print");
-    expect(ui.lines.join("\n")).toContain("provider setup is still saved");
-    ui.consumed();
-  });
-
-  it("does not attempt sign-in if saved-account inspection fails", async () => {
-    const deps = dependencies();
-    deps.accountReady.mockRejectedValue(new Error("credential-document-secret"));
-    const ui = prompts({ choices: [1, 0], confirms: [true] });
-    expect(await runPhoneSetup(options, ui.io, deps)).toEqual({ options });
-    expect(deps.login).not.toHaveBeenCalled();
-    expect(ui.lines.join("\n")).not.toContain("credential-document-secret");
-  });
-
-  it("supports existing Tailscale only after consent, without installing it or signing in", async () => {
-    const deps = dependencies();
-    const ui = prompts({ choices: [2, 1], confirms: [true] });
-    expect(await runPhoneSetup(options, ui.io, deps)).toEqual({
+    expect(await runPhoneSetup(options, ui.io)).toEqual({
       phone: "android", options: { ...options, tailscale: true, publicUrl: undefined, client: true, pair: true },
     });
     expect(ui.io.confirm).toHaveBeenCalledWith(expect.stringContaining("tailnet"), false);
-    expect(deps.login).not.toHaveBeenCalled();
     expect(ui.lines.join("\n")).toContain("already be installed");
     ui.consumed();
   });
 
   it("rejects a pasted secret without echoing it, then accepts an advanced HTTPS origin", async () => {
-    const deps = dependencies();
-    const ui = prompts({ choices: [2, 2, 2], answers: ["https://user:secret@example.com/#code=credential", "https://maus.example/"] });
-    expect(await runPhoneSetup(options, ui.io, deps)).toEqual({
-      phone: "android", options: { ...options, publicUrl: "https://maus.example", client: true, pair: true },
+    const ui = prompts({ choices: [2, 1, 1], answers: ["https://user:secret@example.com/#code=credential", "https://maus.example/"] });
+    expect(await runPhoneSetup(options, ui.io)).toEqual({
+      phone: "android", options: { ...options, publicUrl: "https://maus.example", tailscale: false, client: true, pair: true },
     });
     expect(ui.lines.join("\n")).not.toContain("user:secret");
     expect(ui.lines.join("\n")).not.toContain("code=credential");
-    expect(deps.login).not.toHaveBeenCalled();
     ui.consumed();
   });
 
   it("offers back and skip without enabling any route", async () => {
-    const deps = dependencies();
-    const ui = prompts({ choices: [1, 2, 3, 0], answers: [""] });
-    expect(await runPhoneSetup(options, ui.io, deps)).toEqual({ options });
-    expect(deps.login).not.toHaveBeenCalled();
+    const ui = prompts({ choices: [1, 1, 2, 0], answers: [""] });
+    expect(await runPhoneSetup(options, ui.io)).toEqual({ options });
     ui.consumed();
   });
 
   it.each([
-    { publicUrl: "https://maus.example/" }, { tailscale: true }, { tunnel: true },
+    { publicUrl: "https://maus.example/" }, { tailscale: true },
   ])("reuses explicit existing route options without a nested chooser: %j", async (route) => {
-    const deps = dependencies();
-    deps.accountReady.mockReturnValue(true);
     const ui = prompts({ choices: [1] });
     const input = { ...options, ...route };
-    const result = await runPhoneSetup(input, ui.io, deps);
+    const result = await runPhoneSetup(input, ui.io);
     expect(result.phone).toBe("ios");
     expect(result.options.client).toBe(true);
     expect(ui.io.choose).toHaveBeenCalledTimes(1);
     expect(ui.io.confirm).not.toHaveBeenCalled();
-    expect(deps.login).not.toHaveBeenCalled();
     ui.consumed();
   });
 
   it("does not mistake a localhost publicUrl for phone connectivity", async () => {
-    const deps = dependencies();
-    const ui = prompts({ choices: [1, 4] });
+    const ui = prompts({ choices: [1, 3] });
     const input = { ...options, publicUrl: "http://127.0.0.1:18799" };
-    expect(await runPhoneSetup(input, ui.io, deps)).toEqual({ options: input });
+    expect(await runPhoneSetup(input, ui.io)).toEqual({ options: input });
     expect(ui.lines.join("\n")).toContain("localhost or LAN-IP link will not connect");
     ui.consumed();
   });
 
   it("propagates Ctrl-C before route selection without changing options", async () => {
-    const deps = dependencies();
     const ui = prompts({ choices: [new SetupCancelled()] });
-    await expect(runPhoneSetup(options, ui.io, deps)).rejects.toBeInstanceOf(SetupCancelled);
-    expect(deps.login).not.toHaveBeenCalled();
-    expect(options.tunnel).toBe(false);
-  });
-
-  it("propagates Ctrl-C during account sign-in without selecting or saving a route", async () => {
-    const deps = dependencies();
-    deps.login.mockRejectedValue(new SetupCancelled());
-    const ui = prompts({ choices: [1, 0], confirms: [true] });
-    await expect(runPhoneSetup(options, ui.io, deps)).rejects.toBeInstanceOf(SetupCancelled);
-    expect(options.tunnel).toBe(false);
+    await expect(runPhoneSetup(options, ui.io)).rejects.toBeInstanceOf(SetupCancelled);
+    expect(options.tailscale).toBe(false);
   });
 });
 
@@ -238,9 +160,9 @@ describe("phone pairing instructions", () => {
 
   it("sends an Android phone to the app first, and still offers the browser", () => {
     const text = phonePairingInstructions("android", { origin: "https://maus.example", ready: true }).join("\n");
-    // The QR beside these lines is the openmausbot:// invite, so the app's
+    // The QR beside these lines is the agentbot:// invite, so the app's
     // own scanner is now the primary route rather than a dead end.
-    expect(text).toContain("open the OpenMausBot app and scan the QR with its pairing scanner");
+    expect(text).toContain("open the Agentbot app and scan the QR with its pairing scanner");
     // The QR beside these lines is the app-scheme invite, so telling people to
     // scan it with Camera for the browser would send them nowhere.
     expect(text).toContain("Camera will not open it in a browser");

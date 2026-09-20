@@ -17,7 +17,7 @@ it does not measure a real model's natural-language-to-cron accuracy.
 
 ```sh
 pnpm exec vitest run shared/routine-schedule.test.ts server/routine-cron.e2e.test.ts server/routines.test.ts server/routines-startup.test.ts src/components/routines/cron-editor.test.ts src/lib/routine-calendar.test.ts src/lib/schedule-label.test.ts server/bot-package.test.ts server/package-export.test.ts
-OMB_UI_E2E=1 pnpm exec vitest run scripts/testing/cron-routines-ui.e2e.test.ts
+AGENTBOT_UI_E2E=1 pnpm exec vitest run scripts/testing/cron-routines-ui.e2e.test.ts
 ```
 
 ## Launch the isolated renderer

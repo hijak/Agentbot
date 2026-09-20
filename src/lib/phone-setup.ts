@@ -1,8 +1,7 @@
-import type { CompanionAccountState } from "../types/ogb";
 import { t } from "./i18n";
 import type { CompanionEndpoint, CompanionPairingRouteMode } from "./companion-pairing";
 
-export type PhoneSetupPhase = "intro" | "sign-in" | "verifying" | "qr" | "success";
+export type PhoneSetupPhase = "intro" | "verifying" | "qr" | "success";
 
 export interface PhoneSetupFlowState {
   active: boolean;
@@ -84,11 +83,7 @@ export function phoneSetupReducer(
   }
 }
 
-export type PhoneSetupAccountStatus = CompanionAccountState["status"] | "unavailable";
-
 export interface PhoneSetupSnapshot {
-  accountStatus: PhoneSetupAccountStatus;
-  accountBusy: boolean;
   provisioning: boolean;
   provisioningTimedOut?: boolean;
   pairingOpen: boolean;
@@ -103,21 +98,11 @@ export function derivePhoneSetupPhase(
   if (flow.pairedDeviceName) return "success";
   if (!flow.active) return "intro";
   if (snapshot.pairingOpen || flow.pairingAttempted) return "qr";
-  if (snapshot.provisioningTimedOut) return "sign-in";
   if (flow.localFallback || flow.tailscaleFallback) return "verifying";
-  if (snapshot.accountStatus === "signed-out" || snapshot.accountStatus === "unavailable") {
-    return "sign-in";
-  }
-  if (snapshot.accountStatus === "error") return "sign-in";
-  if (snapshot.accountBusy || snapshot.provisioning) return "verifying";
   return "verifying";
 }
 
-export type CompanionPairingMode =
-  | "local-only"
-  | "hosted-startable"
-  | "hosted-connecting"
-  | "hosted-ready";
+export type CompanionPairingMode = "local-only" | "hosted-ready";
 
 export interface PhoneSetupCompanionSnapshot {
   enabled: boolean;
@@ -159,27 +144,20 @@ export async function preparePhonePairingRoute<State extends { enabled: boolean;
   return state;
 }
 
-/** Automatic setup is hosted-HTTPS only. Tailscale and plain local pairing
- * remain explicit user choices, so a tailnet route cannot silently replace
- * hosted access while the account connection is still being prepared. */
+/** Automatic setup pairs over the sidecar's published hosted HTTPS route when
+ * present. Tailscale and plain local pairing remain explicit user choices. */
 export const companionPairingMode = (
-  account: CompanionAccountState | null,
   companion: PhoneSetupCompanionSnapshot | null,
 ): CompanionPairingMode => {
   if (companion?.endpoints?.some((endpoint) => endpoint.kind === "hosted")) {
     return "hosted-ready";
   }
-  if (!account?.available || account.status === "signed-out" || account.status === "error") {
-    return "local-only";
-  }
-  if (account.status === "ready" && !companion?.enabled) return "hosted-startable";
-  return "hosted-connecting";
+  return "local-only";
 };
 
-export type PhonePairingGate = "open" | "start" | "wait" | "account-required";
+export type PhonePairingGate = "open" | "unavailable";
 
 export function phonePairingGate(
-  account: CompanionAccountState | null,
   companion: PhoneSetupCompanionSnapshot | null,
   explicitRoute: boolean,
 ): PhonePairingGate {
@@ -187,15 +165,11 @@ export function phonePairingGate(
   // This bypass is shared by Wi-Fi and Tailscale; neither is an automatic
   // alternative to the hosted route.
   if (explicitRoute) return "open";
-  switch (companionPairingMode(account, companion)) {
+  switch (companionPairingMode(companion)) {
     case "hosted-ready":
       return "open";
-    case "hosted-startable":
-      return "start";
-    case "hosted-connecting":
-      return "wait";
     case "local-only":
-      return "account-required";
+      return "unavailable";
   }
 }
 
@@ -417,34 +391,19 @@ const REQUEST_REFERENCE =
 const IPC_REJECTION =
   /^Error invoking remote method ['"][^'"\r\n]+['"]:\s*(?:Error:\s*)?/i;
 const PUBLIC_ACCOUNT_MESSAGES = [
-  /^Enter a valid email address\.$/,
-  /^The secure connection request (?:was not accepted|was not allowed)\./,
-  /^That code (?:is not valid|expired)\./,
-  /^Your sign-in expired\./,
-  /^(?:OpenMausBot|Agentbot) could not reach its secure connection service\./,
   /^Too many attempts were made\./,
-  /^This computer was reconnected too often\./,
-  /^This account has reached its computer limit\./,
   /^This computer is already connected\./,
-  /^The secure connection (?:is still being prepared|service could not finish setup|is still being removed)\./,
-  /^Secure access is not available right now\./,
-  /^The secure connection service (?:had a problem|returned an unexpected response)\./,
-  /^The secure connection request could not be completed\./,
 ];
 
 /** Electron prefixes rejected IPC errors with its channel implementation.
  * Keep that machinery and arbitrary internal messages out of product copy,
- * while retaining the already-sanitized account message and request ID. */
+ * while retaining an already-sanitized public message and request ID. */
 export function normalizePhoneSetupActionError(cause: unknown, fallback: string): string {
   const raw = cause instanceof Error ? cause.message : "";
   const unwrapped = raw.replace(IPC_REJECTION, "").replace(/^Error:\s*/i, "").trim();
   const reference = unwrapped.match(REQUEST_REFERENCE)?.[1] ?? "";
   const message = unwrapped.replace(REQUEST_REFERENCE, "").trim();
-  const forbiddenCodeRequest =
-    /remote method ['"]companion-account:request-code['"]/i.test(raw)
-    && message.startsWith("The secure connection request was not allowed.");
-  const publicMessage = !forbiddenCodeRequest
-    && PUBLIC_ACCOUNT_MESSAGES.some((pattern) => pattern.test(message))
+  const publicMessage = PUBLIC_ACCOUNT_MESSAGES.some((pattern) => pattern.test(message))
     ? message
     : fallback;
   return reference ? t("phone.error.reference", { message: publicMessage, reference }) : publicMessage;

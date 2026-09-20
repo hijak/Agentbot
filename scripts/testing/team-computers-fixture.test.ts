@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { launchVerificationServer } from "../control-omb.ts";
+import { launchVerificationServer } from "../control-agentbot.ts";
 
 it.each([
   "https://127.0.0.1:12345", "http://localhost:12345", "http://192.0.2.1:12345",

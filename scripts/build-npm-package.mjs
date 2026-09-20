@@ -1,6 +1,6 @@
-// Assemble the `openmausbot` npm package: the self-contained server bundle,
+// Assemble the `agentbot` npm package: the self-contained server bundle,
 // the built UI, the bundled skills and the CLI, with a package.json of its
-// own. `npx openmausbot serve` then needs Node 24+ and nothing else.
+// own. `npx agentbot serve` then needs Node 24+ and nothing else.
 //
 //   pnpm build:server && pnpm exec vite build && node scripts/build-npm-package.mjs
 //   cd release/npm && npm pack        # or npm publish --access public
@@ -12,7 +12,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const out = join(root, "release", "npm");
 const app = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 
-for (const required of ["dist-server/index.js", "dist-server/openmausbot.js", "dist/index.html"]) {
+for (const required of ["dist-server/index.js", "dist-server/agentbot.js", "dist/index.html"]) {
   if (!existsSync(join(root, required))) {
     console.error(`missing ${required}: run \`pnpm build:server && pnpm exec vite build\` first`);
     process.exit(1);
@@ -26,7 +26,7 @@ cpSync(join(root, "dist"), join(out, "dist"), { recursive: true });
 if (existsSync(join(root, "skills"))) cpSync(join(root, "skills"), join(out, "skills"), { recursive: true });
 // The enterprise layer, bundled by scripts/bundle-server.mjs, under the path
 // server/enterprise.ts loads from: <package>/enterprise/server/index.js.
-// Source-available under its own license; inert without OMB_LICENSE_KEY.
+// Source-available under its own license; inert without AGENTBOT_LICENSE_KEY.
 const enterpriseBundle = join(root, "dist-server", "enterprise", "server", "index.js");
 if (existsSync(enterpriseBundle)) {
   mkdirSync(join(out, "enterprise", "server"), { recursive: true });
@@ -38,23 +38,23 @@ if (existsSync(enterpriseBundle)) {
 cpSync(join(root, "LICENSE"), join(out, "LICENSE"));
 
 // The bin lives next to the bundle so serverEntry() finds index.js by path.
-writeFileSync(join(out, "cli.js"), `#!/usr/bin/env node\nimport "./dist-server/openmausbot.js";\n`);
+writeFileSync(join(out, "cli.js"), `#!/usr/bin/env node\nimport "./dist-server/agentbot.js";\n`);
 
 writeFileSync(
   join(out, "package.json"),
   JSON.stringify(
     {
-      name: "openmausbot",
+      name: "agentbot",
       version: app.version,
-      description: "Run the OpenMausBot server anywhere and pair your devices to it",
+      description: "Run the Agentbot server anywhere and pair your devices to it",
       license: "Apache-2.0",
       type: "module",
-      bin: { openmausbot: "cli.js" },
+      bin: { agentbot: "cli.js" },
       files: ["cli.js", "dist-server", "dist", "skills", "enterprise", "LICENSE", "README.md"],
       engines: { node: ">=24" },
-      repository: { type: "git", url: "https://github.com/milind-soni/OpenMausBot.git" },
-      homepage: "https://github.com/milind-soni/OpenMausBot#readme",
-      keywords: ["openmausbot", "agents", "self-hosted", "server"],
+      repository: { type: "git", url: "https://github.com/milind-soni/Agentbot.git" },
+      homepage: "https://github.com/milind-soni/Agentbot#readme",
+      keywords: ["agentbot", "agents", "self-hosted", "server"],
     },
     null,
     2,
@@ -63,17 +63,17 @@ writeFileSync(
 
 writeFileSync(
   join(out, "README.md"),
-  `# openmausbot
+  `# agentbot
 
 Your own team of AI bots, with guided terminal setup. Requires Node 24+.
 
 \`\`\`sh
-npm install -g openmausbot
-openmausbot
+npm install -g agentbot
+agentbot
 \`\`\`
 
-Or run \`npx openmausbot\` without a global install. Use the same command next
-time; \`openmausbot start\` is an alias for the bare command.
+Or run \`npx agentbot\` without a global install. Use the same command next
+time; \`agentbot start\` is an alias for the bare command.
 
 First launch: use arrow keys and Enter (numbered choices in plain terminals) to choose
 ChatGPT/Codex, Claude Code, or an API service; sign in or paste a hidden API
@@ -84,14 +84,14 @@ conversations keep their settings.
 One optional step connects your phone, defaulting to Skip for now. Choose
 an explicitly approved managed public HTTPS endpoint protected by pairing,
 existing Tailscale, or an HTTPS reverse proxy you already configured.
-Managed access uses a separate OpenMausBot account and asks permission for
+Managed access uses a separate Agentbot account and asks permission for
 the public endpoint and possible connector download. The pairing page and
 basic server identity are public; chat and settings require pairing.
 Tailscale must already be installed and signed in on both devices.
 
 After the HTTPS connection is checked, scan the QR with your phone. When
 you pair an Android phone the QR is an app link, so scan it inside the
-OpenMausBot app; the web address is printed beside it if you would rather
+Agentbot app; the web address is printed beside it if you would rather
 use a browser. On iPhone or iPad, scan with Camera for Safari, or use the
 app's own scanner. Choose Connect on the phone; scanning alone is not a
 completed pairing. Codes
@@ -106,13 +106,13 @@ browser opening uses only the local address; it is skipped for SSH and
 headless sessions, and can be disabled with \`--no-open\`.
 
 \`\`\`sh
-openmausbot setup          # reconfigure AI and optional phone access; not a reset
-openmausbot --no-open      # do not open a browser
-openmausbot --local        # ignore saved remote access for this launch
-openmausbot --no-pair      # suppress phone prompts and invitations
-openmausbot pair           # another phone while the HTTPS workspace is running
-openmausbot sessions       # list devices; sessions revoke ID signs one out
-openmausbot serve          # no onboarding prompts; explicit remote flags for services
+agentbot setup          # reconfigure AI and optional phone access; not a reset
+agentbot --no-open      # do not open a browser
+agentbot --local        # ignore saved remote access for this launch
+agentbot --no-pair      # suppress phone prompts and invitations
+agentbot pair           # another phone while the HTTPS workspace is running
+agentbot sessions       # list devices; sessions revoke ID signs one out
+agentbot serve          # no onboarding prompts; explicit remote flags for services
 \`\`\`
 
 Stop an existing server before reconfiguring or changing access mode.
@@ -125,22 +125,19 @@ API services include OpenAI, OpenRouter, Groq, and compatible endpoints.
 API connections currently support chat only. Setup asks before a short,
 potentially billable API test; native setup confirms sign-in, with model
 access checked when you send a message. API billing is separate from
-ChatGPT/Claude subscriptions. New API keys in config.json and managed
-account credentials in tunnel-account.json are plaintext, not encrypted,
+ChatGPT/Claude subscriptions. New API keys in config.json are plaintext, not encrypted,
 with owner-only permissions (0600 on Unix). Keep these files private.
 
 Ctrl-C before saving AI setup leaves its pending OMB changes unapplied.
 During the later phone step, it keeps the AI setup already saved and exits
 without starting a server. Completed installs and sign-ins remain; run
-\`openmausbot setup\` to continue without deleting your data.
+\`agentbot setup\` to continue without deleting your data.
 
-For a service, use \`serve --tunnel\` after \`login\` for managed HTTPS,
-\`serve --tailscale\` for your tailnet, or your own reverse proxy. The
-\`login\` command signs in to an OpenMausBot account, not an AI provider;
-it does not start the tunnel itself.
+For a service, use \`serve --tailscale\` for your tailnet, \`serve --domain\`
+for your own domain with automatic HTTPS, or your own reverse proxy.
 
-[Setup guide](https://github.com/milind-soni/OpenMausBot/blob/main/docs/cli-onboarding.md)
-· [Hosting guide](https://github.com/milind-soni/OpenMausBot/blob/main/docs/self-hosting.md)
+[Setup guide](https://github.com/milind-soni/Agentbot/blob/main/docs/cli-onboarding.md)
+· [Hosting guide](https://github.com/milind-soni/Agentbot/blob/main/docs/self-hosting.md)
 `,
 );
-console.log(`npm package assembled at ${out} (openmausbot@${app.version})`);
+console.log(`npm package assembled at ${out} (agentbot@${app.version})`);

@@ -28,7 +28,7 @@ let registry: SessionRegistry;
 const file = () => join(dir, "sessions.json");
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), "omb-sessions-"));
+  dir = mkdtempSync(join(tmpdir(), "agentbot-sessions-"));
   clock = 1_700_000_000_000;
   registry = new SessionRegistry({ file: file(), now: () => clock });
 });

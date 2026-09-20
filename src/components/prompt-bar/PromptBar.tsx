@@ -492,18 +492,26 @@ export default function PromptBar({
 
   const toggleListen = () => {
     if (listening) {
-      dictation.current += 1;
       latest.current.onDictateStop?.();
       setListening(false);
       return;
     }
     const seq = ++dictation.current;
+    const initialDraft = draft;
     setListening(true);
-    Promise.resolve(latest.current.onDictate?.()).then(
+    Promise.resolve(
+      latest.current.onDictate?.(partial => {
+        if (seq === dictation.current && typeof partial === 'string' && partial.trim()) {
+          setDraft(initialDraft.trim() ? `${initialDraft.trimEnd()} ${partial}` : partial);
+        }
+      })
+    ).then(
       text => {
         if (seq !== dictation.current) return;
         setListening(false);
-        if (text) setDraft(d => (d.trim() ? `${d.trimEnd()} ${text}` : text));
+        if (text && text.trim()) {
+          setDraft(initialDraft.trim() ? `${initialDraft.trimEnd()} ${text}` : text);
+        }
         focusInput();
       },
       error => {

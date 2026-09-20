@@ -13,8 +13,8 @@ const activity = (name: string, extra: Partial<NonNullable<Message["tool"]>> = {
 
 describe("liveActivityLabel", () => {
   it("shows thinking before a tool starts and after it settles", () => {
-    expect(liveActivityLabel()).toBe("Thinking");
-    expect(liveActivityLabel(activity("Read", { ok: true }))).toBe("Thinking");
+    expect(liveActivityLabel()).toBe("Thinking…");
+    expect(liveActivityLabel(activity("Read", { ok: true }))).toBe("Thinking…");
   });
 
   it("uses the server's narration for the exact live action", () => {
@@ -23,14 +23,11 @@ describe("liveActivityLabel", () => {
     );
   });
 
-  it("maps common native and MCP tool names when narration is unavailable", () => {
-    expect(liveActivityLabel(activity("Bash: pnpm test"))).toBe("Running a command");
-    expect(liveActivityLabel(activity("mcp__computer__click"))).toBe("Using the computer");
-    expect(liveActivityLabel(activity("web_search"))).toBe("Searching the web");
-    expect(liveActivityLabel(activity("delegate_bot"))).toBe("Handing off a task");
-    expect(liveActivityLabel(activity("ask_bot"))).toBe("Asking a teammate");
-    expect(liveActivityLabel(activity("list_rooms"))).toBe("Checking the groups");
-    expect(liveActivityLabel(activity("post_to_room"))).toBe("Posting in a group");
+  it("mirrors the dashboard Using … copy for live tool names", () => {
+    expect(liveActivityLabel(activity("Bash: pnpm test"))).toBe("Using Bash…");
+    expect(liveActivityLabel(activity("mcp__computer__click"))).toBe("Using click…");
+    expect(liveActivityLabel(activity("web_search"))).toBe("Using web_search…");
+    expect(liveActivityLabel(activity("delegate_bot"))).toBe("Using delegate_bot…");
   });
 
   it("does not present bot-to-bot communication chips as the active action", () => {
@@ -39,6 +36,6 @@ describe("liveActivityLabel", () => {
         ...activity("ask_bot"),
         comm: { groupId: "room", withBotId: "bot", withName: "Peer", withColor: "blue" },
       }),
-    ).toBe("Thinking");
+    ).toBe("Thinking…");
   });
 });

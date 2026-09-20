@@ -16,7 +16,7 @@ import {
   openMessageFile,
 } from "./message-file.ts";
 
-const suite = mkdtempSync(join(tmpdir(), "omb-message-file-"));
+const suite = mkdtempSync(join(tmpdir(), "agentbot-message-file-"));
 const workspace = join(suite, "workspace");
 const outside = join(suite, "outside");
 

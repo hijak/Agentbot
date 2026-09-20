@@ -33,14 +33,6 @@ import {
   managedComposioChildEnvironment,
   normalizeManagedComposioBrokerUrl,
 } from "./managed-composio.mjs";
-import {
-  createManagedCompanionTunnel,
-  managedCompanionTunnelAccess,
-  resolveCloudflaredBinary,
-  resolveManagedCompanionGuardian,
-  withManagedCompanionTunnelAccess,
-  withoutManagedCompanionTunnelAccess,
-} from "./managed-companion-tunnel.mjs";
 import { createSecureCredentialState } from "./secure-credential-state.mjs";
 import {
   createPhoneSecretSaveCoordinator,
@@ -60,12 +52,6 @@ import {
 } from "./desktop-companion-client.mjs";
 import { isKnownSkin, skinChrome } from "./skin-overlay.cjs";
 import { readSecureCredentials } from "./secure-credentials.mjs";
-import { createControlPlaneClient } from "./control-plane-client.mjs";
-import {
-  companionAccountCleanupPending,
-  createCompanionAccountService,
-  resolveCompanionControlPlaneURL,
-} from "./companion-account-service.mjs";
 import {
   agentHostingHostedEnabled,
   createAgentHostingAuthService,
@@ -97,7 +83,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // 127.0.0.1 explicitly — vite binds IPv4; a bare "localhost" here can
 // resolve to ::1 and paint a black window
 const DEV_URL = process.env.ELECTRON_START_URL ?? "http://127.0.0.1:5199";
-const DEFAULT_COMPOSIO_BROKER_URL = "https://openmausbot-composio.milindsoni201.workers.dev";
+const DEFAULT_COMPOSIO_BROKER_URL = "https://agentbot-composio.milindsoni201.workers.dev";
 let SERVER_PORT = 8799;
 const APP_ICON = path.join(__dirname, "resources/app-icon.png");
 let desktopViewerWindow = null;
@@ -193,14 +179,14 @@ function applyUnreadBadge(win = mainWindow) {
 // intercepting input. This app is not graphics-heavy, so reliability wins.
 if (process.platform === "linux") {
   app.disableHardwareAcceleration();
-  app.setDesktopName("com.openmausbot.app.desktop");
+  app.setDesktopName("com.agentbot.app.desktop");
 }
 
 // One instance per user: without this lock a second launch forks a second
 // harness server on a fallback port and splits data dirs in two. The loser
 // exits before any child or window exists; the winner surfaces itself.
 if (!app.requestSingleInstanceLock()) {
-  console.log("[desktop] OpenMausBot is already running — focusing that window");
+  console.log("[desktop] Agentbot is already running — focusing that window");
   process.exit(0);
 }
 
@@ -315,7 +301,7 @@ const serverSupervisor = createServerSupervisor({
     slog("server recovery paused after repeated failures; quit and reopen to retry");
     dialog.showErrorBox(
       "The bot server stopped",
-      "Automatic recovery could not restart the background server. Quit and reopen OpenMausBot to try again. Interrupted chat turns were not resent.\n\n" +
+      "Automatic recovery could not restart the background server. Quit and reopen Agentbot to try again. Interrupted chat turns were not resent.\n\n" +
         `Server log: ${path.join(LOG_DIR, "server.log")}`,
     );
   },
@@ -325,9 +311,9 @@ const serverSupervisor = createServerSupervisor({
 function desktopDataDir() {
   // Match the historical desktop fallback for an unset or empty override,
   // then pass this exact resolved path to the utility child. server/config.ts
-  // intentionally treats an empty OMB_DATA_DIR differently, so inheriting it
+  // intentionally treats an empty AGENTBOT_DATA_DIR differently, so inheriting it
   // without normalization would lease one directory and write another.
-  return process.env.OMB_DATA_DIR || path.join(app.getPath("home"), ".openmausbot");
+  return process.env.AGENTBOT_DATA_DIR || path.join(app.getPath("home"), ".agentbot");
 }
 
 async function stopUtilityServer(proc, timeoutMs = UTILITY_SERVER_STOP_TIMEOUT_MS) {
@@ -458,15 +444,15 @@ async function secureWorkspaceConfig() {
 }
 
 function composioBrokerUrl() {
-  const configured = process.env.OMB_COMPOSIO_BROKER_URL?.trim();
+  const configured = process.env.AGENTBOT_COMPOSIO_BROKER_URL?.trim();
   return normalizeManagedComposioBrokerUrl(
     configured || (app.isPackaged ? DEFAULT_COMPOSIO_BROKER_URL : ""),
   );
 }
 
 // The packaged app has no terminal: everything about the server child's life
-// goes to server.log in the OS log dir (~/Library/Logs/OpenMausBot on macOS,
-// Console.app-visible; %APPDATA%\OpenMausBot\logs on Windows), which is also
+// goes to server.log in the OS log dir (~/Library/Logs/Agentbot on macOS,
+// Console.app-visible; %APPDATA%\Agentbot\logs on Windows), which is also
 // why stdio is piped, not inherited — under a Finder/Explorer launch the
 // parent's stdio leads nowhere and a failed boot is otherwise undiagnosable.
 const LOG_DIR = app.getPath("logs");
@@ -475,9 +461,7 @@ const DESKTOP_CRASH_LOG_MAX_BYTES = 512 * 1024;
 let logStream = null;
 let desktopShutdownStarted = false;
 import {
-  companionAdvertisedHostedUrl,
   companionEnabledAtRest,
-  companionOriginTarget,
   companionPairing,
   companionRefreshTailscale,
   companionCloudDesktopAccess,
@@ -486,7 +470,6 @@ import {
   companionState,
   rememberCompanionEnabled,
   rememberCompanionKeepAwake,
-  setCompanionHostedUrl,
   setCompanionLifecycleListener,
   startCompanion,
   stopCompanion,
@@ -615,23 +598,16 @@ installDesktopCrashListeners({
   mainWebContents: () => mainWindow?.webContents ?? null,
 });
 
-// ── managed companion connection ───────────────────────────────────────
-// Account onboarding provisions one remote Cloudflare Tunnel per desktop,
-// then calls reconcileManagedCompanionEndpointProvision below. Only the
-// endpoint is public state. The connector token stays in credentials.bin and
-// is passed to cloudflared through a private token file by the lifecycle
-// module — never through IPC, argv, the environment, or logs.
-let managedCompanionConnector = null;
-let companionAccountService = null;
+// ── local companion ────────────────────────────────────────────────────
+// The phone companion runs as a local-only sidecar (LAN, Bonjour, Tailscale).
+// There is no remotely-managed tunnel: nothing here publishes a hosted
+// endpoint, and no connector credentials are persisted.
 let agentHostingAuthService = null;
 let companionDesiredThisLaunch = false;
-let companionLaunchGeneration = 0;
-let advertisementTransition = Promise.resolve();
 
-/** The one serialized credential mutation hook. Account onboarding and every
- * other runtime credential writer share this state, so persisting a tunnel
- * token can never overwrite an API key saved at the same time (or vice
- * versa). */
+/** The one serialized credential mutation hook. Every runtime credential
+ * writer shares this state, so persisting one secret can never overwrite
+ * another saved at the same time (or vice versa). */
 export async function updateSecureCredentialDocument(derive, afterPersist) {
   if (!secureCredentialState) throw new Error("Secure credentials are not ready");
   try {
@@ -665,22 +641,7 @@ async function ensurePhoneSecretIdentity() {
 }
 
 function publicManagedCompanionState() {
-  const access = managedCompanionTunnelAccess(secureCredentials);
-  const status = managedCompanionConnector?.getStatus();
-  if (status) {
-    const publicState = {
-      status: status.status,
-      configured: status.configured,
-      ready: status.ready,
-    };
-    if (status.endpoint) publicState.url = status.endpoint;
-    if (status.retryInMs) publicState.retryInMs = status.retryInMs;
-    if (status.error) publicState.error = status.error;
-    return publicState;
-  }
-  return access
-    ? { status: "stopped", configured: true, ready: false, url: access.endpoint }
-    : { status: "unconfigured", configured: false, ready: false };
+  return { status: "unconfigured", configured: false, ready: false };
 }
 
 function decorateDesktopCompanionState(state) {
@@ -694,12 +655,12 @@ async function desktopCompanionState() {
   return decorateDesktopCompanionState(await companionState());
 }
 
-function companionLaunchOptions(hostedUrl = null) {
+function companionLaunchOptions() {
   return {
     resourcesPath: process.resourcesPath,
     harnessPort: SERVER_PORT,
     mutationToken: companionMutationToken,
-    hostedUrl,
+    hostedUrl: null,
     // Only an embedded server receives the private half over its utility
     // port. A dev server launched in another terminal cannot decrypt, so it
     // must not advertise a public key and strand the phone on a dead path.
@@ -708,100 +669,29 @@ function companionLaunchOptions(hostedUrl = null) {
   };
 }
 
-function ensureManagedCompanionConnector() {
-  if (managedCompanionConnector) return managedCompanionConnector;
-  managedCompanionConnector = createManagedCompanionTunnel({
-    binaryPath: resolveCloudflaredBinary({
-      isPackaged: app.isPackaged,
-      resourcesPath: process.resourcesPath,
-      appPath: app.getAppPath(),
-    }),
-    guardianEntry: resolveManagedCompanionGuardian({ appPath: app.getAppPath() }),
-    runtimeExecutable: process.execPath,
-    runtimeRoot: path.join(app.getPath("userData"), "managed-companion-tunnel"),
-    onChange: (status) => {
-      slog(`managed companion connection ${status.status}`);
-      if (!companionDesiredThisLaunch) return;
-      void reconcileCompanionAdvertisement(status.ready ? status.endpoint : null);
-    },
-    log: slog,
-  });
-  return managedCompanionConnector;
-}
-
-/** Publish a hosted address only after its connector has passed public health
- * verification. Updating the owned sidecar in place preserves the exact
- * private origin generation and cannot invalidate an open pairing window. */
-function reconcileCompanionAdvertisement(
-  endpoint,
-  ownedGeneration = companionLaunchGeneration,
-) {
-  const normalizedEndpoint = endpoint || null;
-  const work = advertisementTransition.then(async () => {
-    if (
-      ownedGeneration !== companionLaunchGeneration ||
-      !companionDesiredThisLaunch ||
-      !companionRunning() ||
-      companionAdvertisedHostedUrl() === normalizedEndpoint
-    ) {
-      return desktopCompanionState();
-    }
-    const updated = await setCompanionHostedUrl(normalizedEndpoint);
-    return { ...updated, managedConnection: publicManagedCompanionState() };
-  });
-  advertisementTransition = work.then(
-    () => {},
-    () => {},
-  );
-  return work;
-}
-
-async function startManagedCompanionConnection({ waitForVerification = true } = {}) {
-  if (companionAccountCleanupPending(secureCredentials)) {
-    return publicManagedCompanionState();
-  }
-  const access = managedCompanionTunnelAccess(secureCredentials);
-  if (!access) return publicManagedCompanionState();
-  const target = companionOriginTarget();
-  if (!target) return publicManagedCompanionState();
-  const operation = ensureManagedCompanionConnector().start({ ...access, originTarget: target });
-  if (!waitForVerification) {
-    void operation.catch(() => {});
-    return publicManagedCompanionState();
-  }
-  const status = await operation;
-  await reconcileCompanionAdvertisement(status.ready ? status.endpoint : null);
-  return publicManagedCompanionState();
-}
-
-async function startDesktopCompanion({ waitForHosted = true, remember = true } = {}) {
+async function startDesktopCompanion({ remember = true } = {}) {
   companionDesiredThisLaunch = true;
-  companionLaunchGeneration += 1;
-  // Direct LAN comes up first. The hosted endpoint is added in place only
-  // after the guardian has verified the public route to this exact sidecar.
+  // Local-only advertisement: direct LAN comes up and stays the whole story.
   const localState = await startCompanion(companionLaunchOptions());
   if (!localState.enabled || localState.error) {
     companionDesiredThisLaunch = false;
     return desktopCompanionState();
   }
   if (remember) rememberCompanionEnabled(true);
-  await startManagedCompanionConnection({ waitForVerification: waitForHosted });
   return desktopCompanionState();
 }
 
 async function stopDesktopCompanion({ remember = true } = {}) {
   companionDesiredThisLaunch = false;
-  companionLaunchGeneration += 1;
   if (remember) rememberCompanionEnabled(false);
   syncCompanionKeepAwake(false, false);
-  await managedCompanionConnector?.stop();
   await stopCompanion();
   return desktopCompanionState();
 }
 
 async function refreshDesktopCompanionTailscale() {
   if (!companionRunning()) {
-    const started = await startDesktopCompanion({ waitForHosted: false });
+    const started = await startDesktopCompanion({ remember: false });
     if (!started.enabled || started.error) return started;
   }
   return decorateDesktopCompanionState(await companionRefreshTailscale());
@@ -811,50 +701,8 @@ setCompanionLifecycleListener(({ expected, pid }) => {
   if (expected) return;
   slog(`owned companion exited unexpectedly pid=${pid ?? "unknown"}`);
   companionDesiredThisLaunch = false;
-  companionLaunchGeneration += 1;
   syncCompanionKeepAwake(false, false);
-  // stop() invalidates the guardian's owner pipe synchronously, before the
-  // sidecar module removes this generation's private socket.
-  void managedCompanionConnector?.stop().catch(() => {});
 });
-
-/** Narrow main-process hook for the account onboarding flow. Its return value
- * is explicitly secret-free and can be used to refresh the settings panel. */
-export async function reconcileManagedCompanionEndpointProvision(provision) {
-  await updateSecureCredentialDocument((credentials) =>
-    withManagedCompanionTunnelAccess(credentials, provision),
-  );
-  if (companionDesiredThisLaunch) {
-    await startManagedCompanionConnection({ waitForVerification: true });
-  }
-  return publicManagedCompanionState();
-}
-
-/** Called only after the control plane has revoked/deleted the endpoint. */
-export async function clearManagedCompanionEndpointCredentials() {
-  await updateSecureCredentialDocument((credentials) =>
-    withoutManagedCompanionTunnelAccess(credentials),
-  );
-  await managedCompanionConnector?.stop();
-  if (companionDesiredThisLaunch) await reconcileCompanionAdvertisement(null);
-  return publicManagedCompanionState();
-}
-
-/** Account sign-out must stop advertising the hosted route before it asks
- * the control plane to revoke anything, but it must not erase the retry
- * credentials until that remote cleanup is durably scheduled. */
-async function stopManagedCompanionEndpointLocally() {
-  await managedCompanionConnector?.stop();
-  if (companionDesiredThisLaunch) await reconcileCompanionAdvertisement(null);
-  return publicManagedCompanionState();
-}
-
-async function activatePersistedManagedCompanionEndpoint() {
-  if (companionDesiredThisLaunch) {
-    return startManagedCompanionConnection({ waitForVerification: true });
-  }
-  return publicManagedCompanionState();
-}
 
 function installationDisplayName() {
   const hostname = [...os.hostname()]
@@ -862,44 +710,6 @@ function installationDisplayName() {
     .join("")
     .trim();
   return hostname.slice(0, 80) || "This computer";
-}
-
-function ensureCompanionAccountService() {
-  if (companionAccountService) return companionAccountService;
-  const baseURL = resolveCompanionControlPlaneURL({
-    isPackaged: app.isPackaged,
-    environment: process.env,
-  });
-  let client = null;
-  if (baseURL) {
-    try {
-      client = createControlPlaneClient({ baseURL });
-    } catch {
-      // An invalid explicit override disables hosted access. Direct LAN,
-      // Bonjour, and Tailscale pairing remain completely independent.
-    }
-  }
-  companionAccountService = createCompanionAccountService({
-    client,
-    readCredentials: () => secureCredentialState?.read() ?? secureCredentials,
-    updateCredentials: updateSecureCredentialDocument,
-    identity: {
-      name: installationDisplayName(),
-      platform:
-        process.platform === "win32"
-          ? "windows"
-          : process.platform === "darwin"
-            ? "darwin"
-            : "linux",
-      appVersion: app.getVersion().slice(0, 64),
-    },
-    newClientInstanceId: randomUUID,
-    activatePersistedEndpoint: activatePersistedManagedCompanionEndpoint,
-    stopManagedEndpoint: stopManagedCompanionEndpointLocally,
-    managedConnectionState: publicManagedCompanionState,
-    companionIsOn: () => companionDesiredThisLaunch,
-  });
-  return companionAccountService;
 }
 
 function ensureAgentHostingAuthService() {
@@ -1132,11 +942,11 @@ async function runCompanyBackup(kind, input, scheduled = null) {
     const status = await localBackupStatus(proc);
     if (status.pendingRestore) {
       publishCompanyBackupState({ busy: false, pendingRestore: true });
-      throw new Error("Restart OpenMausBot to finish the pending restore before starting another backup operation.");
+      throw new Error("Restart Agentbot to finish the pending restore before starting another backup operation.");
     }
     if (status.busy) throw companyBackupDeferred();
     const transfers = createCompanyBackups({
-      tempRoot: path.join(app.getPath("temp"), "openmaus-company-backups"),
+      tempRoot: path.join(app.getPath("temp"), "agentbot-company-backups"),
       localRequest: (route, init) => localBackupRequest(proc, route, init),
       portalRequest: (route, options) => client.requestBackup(route, { ...options, generation }),
       availableBytes: async temporary => {
@@ -1166,7 +976,7 @@ async function runCompanyBackup(kind, input, scheduled = null) {
 function syncDesktopMutationToken(proc) {
   try {
     proc.postMessage({
-      type: "openmausbot:desktop-mutation-token",
+      type: "agentbot:desktop-mutation-token",
       token: desktopMutationToken,
       companionToken: companionMutationToken,
     });
@@ -1223,29 +1033,29 @@ async function startServerOn(port) {
     // server gets only a private capability that validates that same live
     // owner; fallback-port children must not race to replace the parent lease.
     ...desktopDataDirLease.utilityServerLeaseEnvironment(),
-    OMB_DATA_DIR: desktopDataDir(),
+    AGENTBOT_DATA_DIR: desktopDataDir(),
     // A packaged utility child must never fall back to a descriptor inherited
     // from the launching shell. It starts fail-closed until this exact main
     // process sends the private in-memory connection after spawn.
-    OMB_DESKTOP_PARENT: "1",
-    OMB_STATIC_DIR: path.join(process.resourcesPath, "ui"),
-    OMB_RESOURCES_PATH: process.resourcesPath,
-    OMB_SKILLS_DIR: path.join(process.resourcesPath, "skills"),
-    OMB_PORT: String(port),
+    AGENTBOT_DESKTOP_PARENT: "1",
+    AGENTBOT_STATIC_DIR: path.join(process.resourcesPath, "ui"),
+    AGENTBOT_RESOURCES_PATH: process.resourcesPath,
+    AGENTBOT_SKILLS_DIR: path.join(process.resourcesPath, "skills"),
+    AGENTBOT_PORT: String(port),
     // the server advertises this to remote clients so version skew is visible
-    OMB_APP_VERSION: app.getVersion(),
-    OMB_USER_DATA: app.getPath("userData"),
+    AGENTBOT_APP_VERSION: app.getVersion(),
+    AGENTBOT_USER_DATA: app.getPath("userData"),
     ...(secureCredentials.composioApiKey
       ? { COMPOSIO_API_KEY: secureCredentials.composioApiKey }
       : {}),
     // "we could not read your keys" must not reach the UI as "you have none"
-    OMB_CREDENTIAL_STORE: credentialStoreUnavailable ? "unavailable" : "ok",
+    AGENTBOT_CREDENTIAL_STORE: credentialStoreUnavailable ? "unavailable" : "ok",
     // one env var per stored workspace secret (xai/box/voice/OpenCode Go);
     // the server prefers these over config.json, whose plaintext fields
     // the boot migration has deleted
     ...workspaceCredentialEnv(secureCredentials),
   });
-  delete childEnv.OMB_BROWSER_CONNECTION;
+  delete childEnv.AGENTBOT_BROWSER_CONNECTION;
   slog(`fork ${entry} port=${port}`);
   const proc = utilityProcess.fork(entry, [], {
     env: childEnv,
@@ -1346,7 +1156,7 @@ function syncManagedComposioCredentials() {
   if (!serverProc) return;
   try {
     serverProc.postMessage({
-      type: "openmausbot:managed-composio",
+      type: "agentbot:managed-composio",
       access: managedComposioAccess(composioBrokerUrl(), secureCredentials),
     });
   } catch (error) {
@@ -1367,8 +1177,8 @@ function buildErrorPage({ allPortsOccupied }) {
   const serverLogPath = path.join(LOG_DIR, "server.log");
   const serverLogHref = pathToFileURL(serverLogPath).href;
   const reason = allPortsOccupied
-    ? "Every OpenMausBot port answered health checks from another process — likely a second copy of the app, or another program on ports 8799–28799. Quit that program, then quit and reopen OpenMausBot."
-    : "The background server didn't come up in time — this is usually slow startup, not a port conflict. Quit and reopen OpenMausBot.";
+    ? "Every Agentbot port answered health checks from another process — likely a second copy of the app, or another program on ports 8799–28799. Quit that program, then quit and reopen Agentbot."
+    : "The background server didn't come up in time — this is usually slow startup, not a port conflict. Quit and reopen Agentbot.";
   return (
     "data:text/html;charset=utf-8," +
     encodeURIComponent(
@@ -1431,7 +1241,7 @@ function desktopViewerErrorPage(message, retryUrl) {
 }
 
 function openDesktopViewer(owner, rawUrl, rawTitle, contextId) {
-  if (!owner || owner.isDestroyed()) throw new Error("The OpenMausBot window is unavailable");
+  if (!owner || owner.isDestroyed()) throw new Error("The Agentbot window is unavailable");
   const url = desktopViewerUrl(rawUrl);
   const titleCandidate = Object.prototype.toString.call(rawTitle) === "[object String]" ? rawTitle.trim() : "";
   const title = titleCandidate ? titleCandidate.slice(0, 80) : "Live desktop";
@@ -1476,7 +1286,7 @@ function openDesktopViewer(owner, rawUrl, rawTitle, contextId) {
       sandbox: true,
       // Keep provider cookies away from the app renderer and discard them on
       // app exit. The secret-bearing URL is sufficient to authenticate.
-      partition: "openmausbot-desktop-viewer",
+      partition: "agentbot-desktop-viewer",
     },
   });
   desktopViewerWindow = viewer;
@@ -1549,7 +1359,7 @@ function openDesktopViewer(owner, rawUrl, rawTitle, contextId) {
 }
 
 function ensureDesktopWorkspace(owner) {
-  if (!owner || owner.isDestroyed()) throw new Error("The OpenMausBot window is unavailable");
+  if (!owner || owner.isDestroyed()) throw new Error("The Agentbot window is unavailable");
   if (desktopWorkspaceManager) {
     if (desktopWorkspaceOwner !== owner) {
       throw new Error("The desktop workspace belongs to another app window");
@@ -1561,7 +1371,7 @@ function ensureDesktopWorkspace(owner) {
   const manager = createDesktopWorkspaceManager({
     owner,
     createView: (options) => new WebContentsView(options),
-    partitionPrefix: `openmausbot-desktop-workspace-${randomUUID()}`,
+    partitionPrefix: `agentbot-desktop-workspace-${randomUUID()}`,
     notify: (state) => {
       if (!owner.isDestroyed() && !owner.webContents.isDestroyed()) {
         owner.webContents.send("desktop-workspace:state", state);
@@ -2010,14 +1820,14 @@ function createWindow() {
   // Packaged CI smoke hook. It validates the real renderer/preload bridge and
   // same-origin embedded server, then follows the normal window-close path.
   // No debugging port or sandbox override is needed.
-  if (process.env.OMB_SMOKE_TEST === "1") {
+  if (process.env.AGENTBOT_SMOKE_TEST === "1") {
     win.webContents.once("did-finish-load", async () => {
       try {
         const result = await win.webContents.executeJavaScript(`
           (async () => {
             if (!window.ogb?.getCapabilities) throw new Error("desktop preload bridge is unavailable");
             let crashPromise = null;
-            if (${JSON.stringify(process.env.OMB_SMOKE_CUA === "1")}) {
+            if (${JSON.stringify(process.env.AGENTBOT_SMOKE_CUA === "1")}) {
               crashPromise = new Promise((resolve, reject) => {
                 const timeout = setTimeout(() => {
                   unsubscribe?.();
@@ -2073,7 +1883,7 @@ function createWindow() {
             `unexpected packaged renderer URL: ${result.location} (expected ${expectedLocation})`,
           );
         }
-        if (process.env.OMB_SMOKE_BUNDLED_CUA === "1") {
+        if (process.env.AGENTBOT_SMOKE_BUNDLED_CUA === "1") {
           const connection = await cuaReady;
           const expectedDriver = path.join(
             process.resourcesPath,
@@ -2111,7 +1921,7 @@ function createWindow() {
       } catch (error) {
         console.error(`[smoke] renderer-failed ${error?.stack ?? error}`);
       } finally {
-        if (process.env.OMB_SMOKE_KEEP_OPEN !== "1") win.close();
+        if (process.env.AGENTBOT_SMOKE_KEEP_OPEN !== "1") win.close();
       }
     });
   }
@@ -2207,14 +2017,14 @@ ipcMain.handle("desktop:export-diagnostics", localOnly("desktop:export-diagnosti
   return result.filePath;
 }));
 
-// Bots hand users files as markdown links to paths inside the OpenMausBot
+// Bots hand users files as markdown links to paths inside the Agentbot
 // home (workspaces, attachments). As plain anchors those resolved against the
 // page origin, so the click opened http://127.0.0.1:8799<path> in the default
 // browser and the server's SPA fallback answered with index.html — a second
 // copy of the chat UI instead of the file. Ask where to put it and copy it
 // there instead: a save dialog tells the user the file landed somewhere and
 // where, which a silent copy into ~/Downloads does not. The path is
-// renderer-controlled, so it must resolve inside ~/.openmausbot and be a
+// renderer-controlled, so it must resolve inside ~/.agentbot and be a
 // regular file — never a symlink escape or directory.
 ipcMain.handle("desktop:save-file", localOnly("desktop:save-file", async (event, rawPath) => {
   return withSavableFile(rawPath, { home: os.homedir() }, async ({ defaultName, copyTo }) => {
@@ -2277,7 +2087,7 @@ ipcMain.handle("desktop:open-external", localOnly("desktop:open-external", async
 
 // The Box VNC viewer must be a top-level page for its token exchange. A
 // sandboxed modal BrowserWindow satisfies that requirement while keeping the
-// live desktop inside OpenMausBot instead of sending the person to a browser.
+// live desktop inside Agentbot instead of sending the person to a browser.
 ipcMain.handle("desktop-viewer:open", localOnly("desktop-viewer:open", (event, rawUrl, title, contextId) => {
   const owner = BrowserWindow.fromWebContents(event.sender);
   return openDesktopViewer(owner, rawUrl, title, contextId);
@@ -2443,18 +2253,6 @@ ipcMain.handle("desktop-remote:disconnect", localOnly("desktop-remote:disconnect
   relaunchAfterDesktopRemoteChange();
   return { active: false };
 }));
-
-// Auth and connector credentials never cross this boundary. Every handler
-// returns the same deliberately tiny, secret-free public account state.
-ipcMain.handle("companion-account:state", localOnly("companion-account:state", () => ensureCompanionAccountService().state()));
-ipcMain.handle("companion-account:request-code", localOnly("companion-account:request-code", (_event, email) =>
-  ensureCompanionAccountService().requestCode(email),
-));
-ipcMain.handle("companion-account:verify-code", localOnly("companion-account:verify-code", (_event, email, code) =>
-  ensureCompanionAccountService().verifyCode(email, code),
-));
-ipcMain.handle("companion-account:retry", localOnly("companion-account:retry", () => ensureCompanionAccountService().retry()));
-ipcMain.handle("companion-account:sign-out", localOnly("companion-account:sign-out", () => ensureCompanionAccountService().signOut()));
 
 ipcMain.handle("agenthosting-auth:state", localOnly("agenthosting-auth:state", () => {
   if (!agentHostingHostedEnabled()) {
@@ -2733,15 +2531,15 @@ app.whenReady().then(async () => {
       });
     } catch (error) {
       dialog.showErrorBox(
-        "OpenMausBot could not start safely",
-        error?.message ?? "Another process is using this OpenMausBot data folder.",
+        "Agentbot could not start safely",
+        error?.message ?? "Another process is using this Agentbot data folder.",
       );
       app.quit();
       return;
     }
   }
   if (app.isPackaged) {
-    app.setAsDefaultProtocolClient("openmausbot");
+    app.setAsDefaultProtocolClient("agentbot");
     // Chromium adds this capability below JavaScript, so renderer requests
     // can mutate the local harness while a Full-access shell using curl
     // cannot impersonate the person operating the desktop app.
@@ -2774,7 +2572,6 @@ app.whenReady().then(async () => {
   secureCredentials = secureCredentialState.read();
   if (app.isPackaged) await ensurePhoneSecretIdentity();
   desktopRemoteAccess = desktopCompanionAccess(secureCredentials);
-  const hostedAccount = desktopRemoteAccess ? null : ensureCompanionAccountService();
   // Display capture remains user-initiated. The renderer first sends a
   // short-lived one-shot intent, then calls getDisplayMedia in the same click.
   // The handler binds that request to the same frame/origin, rejects audio,
@@ -2866,7 +2663,7 @@ app.whenReady().then(async () => {
   // (the panel shows the error) rather than retrying; and it never delays
   // the window.
   if (!desktopRemoteAccess && serverReady && companionEnabledAtRest()) {
-    void startDesktopCompanion({ waitForHosted: false, remember: false });
+    void startDesktopCompanion({ remember: false });
   }
   setLocalOrigin(rendererOrigin());
   // Device permissions (microphone, notifications, clipboard) are for the
@@ -2885,10 +2682,6 @@ app.whenReady().then(async () => {
   // poll loop, no registration, no grant replay from disk.
   void refreshSharedComputersAllowed().then((allowed) => { if (allowed) sharingController().start(); });
   createWindow();
-  // Reconcile incomplete setup and resume interrupted sign-out only after the
-  // local app is usable. This background network work never gates LAN pairing
-  // or the first window.
-  if (hostedAccount) void hostedAccount.restore().catch(() => {});
   // Registration is optional network work. Start it only after the local
   // server and first window are usable, then update the server child over its
   // private parent port so Connected Apps becomes available without restart.
@@ -2968,8 +2761,7 @@ app.on("before-quit", (e) => {
   const ownedHelperCleanup = Promise.race([
     Promise.all([
       stopCua().catch(() => {}),
-      // Both listeners reachable from outside the app are owned children.
-      // Shut the connector down first, then the sidecar, without changing the
+      // The owned companion sidecar is shut down without changing the
       // remembered toggle the next launch will restore.
       stopDesktopCompanion({ remember: false }).catch(() => {}),
     ]),

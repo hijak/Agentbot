@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
-import { SidebarHeader } from "../../src/pair/andromeda/SidebarHeader";
-import { AndromedaShell } from "../../src/pair/andromeda/Shell";
+import { SidebarHeader } from "../../src/components/andromeda/SidebarHeader";
+import { AndromedaShell } from "../../src/components/andromeda/Shell";
 import "../../src/styles.css";
 
 function Fixture() {
@@ -14,7 +14,7 @@ function Fixture() {
           <span key={color} style={{ background: color }} className="size-3 rounded-full" />
         ))}
       </div>
-      <aside className={`shrink-0 border-r border-[var(--ah-border-subtle)] ${collapsed ? "w-[76px]" : "w-60"}`}>
+      <aside className={`shrink-0 border-r border-[var(--ah-border-subtle)] ${collapsed ? "w-[88px]" : "w-60"}`}>
         <SidebarHeader
           agentId="fixture-pulse"
           agentName="Pulse"

@@ -4,7 +4,7 @@ const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 // Sandboxed preloads receive Electron's restricted `require`, which cannot
 // load sibling CommonJS files. Keep this tiny predicate inline here; main's
-const desktopRemoteClient = process.argv.includes("--openmausbot-remote-client");
+const desktopRemoteClient = process.argv.includes("--agentbot-remote-client");
 const agentHostingHostedArg = process.argv.find((arg) => arg.startsWith("--omb-agenthosting-hosted="));
 const agentHostingHosted =
   !desktopRemoteClient &&
@@ -32,10 +32,10 @@ const REMOTE_SAFE = new Set(["platform", "getCapabilities", "onCapabilitiesChang
 // parity with shared/workspace-backup-client.ts (covered by the preload test).
 // Only main can request a fresh snapshot; there is no renderer-callable method.
 const COMPANY_BACKUP_CLIENT_KEYS = [
-  "omb-drafts", "omb-draft-attachments", "omb-draft-send-ids", "omb-draft-channel-modes",
-  "omb-skin", "omb-show-threads", "openmausbot.sidebarDensity",
-  "openmausbot.sidebarCollapsedSections.v1", "openmausbot.sidebarSectionOrder.v1",
-  "omb-analytics-opt-out", "openmausbot.remote-voice.v1",
+  "agentbot-drafts", "agentbot-draft-attachments", "agentbot-draft-send-ids", "agentbot-draft-channel-modes",
+  "agentbot-skin", "agentbot-show-threads", "agentbot.sidebarDensity",
+  "agentbot.sidebarCollapsedSections.v1", "agentbot.sidebarSectionOrder.v1",
+  "agentbot-analytics-opt-out", "agentbot.remote-voice.v1",
 ];
 if (isLocalPage && !desktopRemoteClient && process.argv.includes("--omb-company-desktop=1")) {
   ipcRenderer.on("company-backups:collect-client-state", (_event, request) => {
@@ -71,7 +71,7 @@ const bridge = {
     ipcRenderer.on("desktop:capabilities-changed", handler);
     return () => ipcRenderer.removeListener("desktop:capabilities-changed", handler);
   },
-  /** Pair this desktop app to another OpenMausBot host. The bearer remains in
+  /** Pair this desktop app to another Agentbot host. The bearer remains in
    * the main process and is never returned over this bridge. */
   remoteClient: {
     active: desktopRemoteClient,
@@ -98,15 +98,6 @@ const bridge = {
   routines: {
     wakeState: () => ipcRenderer.invoke("routines:wake-state"),
     keepAwake: (enabled) => ipcRenderer.invoke("routines:keep-awake", enabled),
-  },
-  /** Optional account-backed HTTPS access for Companion. Secrets stay in the
-   * main process; the renderer sees only status and narrow user actions. */
-  companionAccount: {
-    state: () => ipcRenderer.invoke("companion-account:state"),
-    requestCode: (email) => ipcRenderer.invoke("companion-account:request-code", email),
-    verifyCode: (email, code) => ipcRenderer.invoke("companion-account:verify-code", email, code),
-    retry: () => ipcRenderer.invoke("companion-account:retry"),
-    signOut: () => ipcRenderer.invoke("companion-account:sign-out"),
   },
   /** AgentHosting thin-client auth. Token stays in main except via session(). */
   agentHosting: {
@@ -206,7 +197,7 @@ const bridge = {
       return () => ipcRenderer.removeListener("window:maximized-changed", handler);
     },
   },
-  /** A reviewed BotMRR package opened through openmausbot://install. */
+  /** A reviewed BotMRR package opened through agentbot://install. */
   onPackageInstall: (cb) => {
     packageInstallListeners.add(cb);
     if (pendingPackageInstallUrl) cb(pendingPackageInstallUrl);
@@ -242,7 +233,7 @@ const bridge = {
   /** Writes the redacted diagnostics report to a user-chosen file; resolves
    * the path, or null when the save dialog was cancelled. */
   exportDiagnostics: () => ipcRenderer.invoke("desktop:export-diagnostics"),
-  /** Ask where to save a bot-created file (inside ~/.openmausbot), copy it
+  /** Ask where to save a bot-created file (inside ~/.agentbot), copy it
    * there and reveal it. Returns the chosen path, or null if the user
    * cancelled the dialog. The chat bubble shows the
    * rejection text verbatim, so strip the "Error invoking remote method"

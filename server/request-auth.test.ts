@@ -136,7 +136,7 @@ describe("resolveRequestAuth", () => {
     resolveRequestAuth(request(headers, method), { sessions, cookieName, streamPath: "/api/events", url: new URL(path, "http://x") });
 
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), "omb-auth-"));
+    dir = mkdtempSync(join(tmpdir(), "agentbot-auth-"));
     sessions = new SessionRegistry({ file: join(dir, "sessions.json") });
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
@@ -144,9 +144,9 @@ describe("resolveRequestAuth", () => {
   it("accepts authenticated relay mutations without exposing the desktop owner capability", () => {
     const headers = {
       host: "127.0.0.1:8799",
-      "x-openmausbot-companion": "1",
-      "x-openmausbot-companion-device": "phone-1",
-      "x-openmausbot-companion-auth": "relay-secret",
+      "x-agentbot-companion": "1",
+      "x-agentbot-companion-device": "phone-1",
+      "x-agentbot-companion-auth": "relay-secret",
     };
     const check = (method: string, path: string, overrides: Record<string, string> = {}, relay = "relay-secret") =>
       resolveRequestAuth(request({ ...headers, ...overrides }, method), {
@@ -160,10 +160,10 @@ describe("resolveRequestAuth", () => {
       ["GET", "/api/events"], ["PATCH", "/api/bots/b/profile"],
     ]) expect(check(method, path).auth?.kind, path).toBe("loopback");
     const forged: Record<string, string>[] = [
-      { "x-openmausbot-companion-auth": "" },
-      { "x-openmausbot-companion-auth": "desktop-secret" },
-      { "x-openmausbot-companion-device": "" },
-      { "x-openmausbot-companion": "0" },
+      { "x-agentbot-companion-auth": "" },
+      { "x-agentbot-companion-auth": "desktop-secret" },
+      { "x-agentbot-companion-device": "" },
+      { "x-agentbot-companion": "0" },
       { origin: "https://evil.example" },
       { "x-forwarded-for": "203.0.113.1" },
       { host: "remote.example" },
@@ -259,7 +259,7 @@ describe("resolveRequestAuth", () => {
     const desktop = resolveRequestAuth(
       request({
         host: "127.0.0.1:8799",
-        "x-openmausbot-desktop-owner": "owner-token-123",
+        "x-agentbot-desktop-owner": "owner-token-123",
       }, "POST"),
       options("/api/routines"),
     );
@@ -387,7 +387,7 @@ describe("resolveRequestAuth", () => {
   });
 });
 
-describe("an IPC listener (openmausbot serve --tunnel) is remote by construction", () => {
+describe("an IPC listener is remote by construction", () => {
   // SAFETY: only headers, method and the socket peer are read; a unix-socket peer has no address
   const overSocket = (headers: Record<string, string>) => ({ headers, method: "GET", socket: {} }) as unknown as IncomingMessage;
 
@@ -404,7 +404,7 @@ describe("an IPC listener (openmausbot serve --tunnel) is remote by construction
   });
 
   it("never grants loopback trust over the socket, even with a loopback Host and no forwarded headers; a session works", () => {
-    const dir = mkdtempSync(join(tmpdir(), "omb-auth-ipc-"));
+    const dir = mkdtempSync(join(tmpdir(), "agentbot-auth-ipc-"));
     try {
       const sessions = new SessionRegistry({ file: join(dir, "sessions.json") });
       const gate = { sessions, cookieName: "omb_session_test", streamPath: "/api/events", url: new URL("/api/bots", "http://x") };
@@ -415,7 +415,7 @@ describe("an IPC listener (openmausbot serve --tunnel) is remote by construction
       const { code } = sessions.openPairing({ scopes: ["admin", "client"] });
       const paired = sessions.exchange({ code, label: "phone", source: "203.0.113.9" });
       if (!paired.ok) throw new Error(paired.error);
-      const admitted = resolveRequestAuth(overSocket({ host: "c-1.openmausbot.com", authorization: `Bearer ${paired.token}` }), gate);
+      const admitted = resolveRequestAuth(overSocket({ host: "c-1.agentbot.com", authorization: `Bearer ${paired.token}` }), gate);
       expect(admitted.auth?.kind).toBe("session");
     } finally {
       rmSync(dir, { recursive: true, force: true });
