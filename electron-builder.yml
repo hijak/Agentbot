@@ -58,6 +58,10 @@ extraResources:
     to: licenses/hpke-core-LICENSE.txt
   - from: third_party/hpke-js/common-LICENSE.txt
     to: licenses/hpke-common-LICENSE.txt
+  # The integrated Piper engine's phonemizer glue. Its wasm/data companions
+  # download at first use (sha-pinned); the glue itself ships with the app.
+  - from: third_party/piper-phonemize
+    to: piper-phonemize
   - from: dist
     to: ui
   - from: dist-server
@@ -100,6 +104,10 @@ mac:
       to: cua-sdk
     - from: dist-native/browser/darwin-${arch}
       to: browser-engine
+    # onnxruntime-node for the integrated Piper engine, staged by
+    # scripts/prepare-ort.mjs — outside ASAR like every native module
+    - from: dist-native/onnxruntime/darwin-${arch}
+      to: onnxruntime
   extendInfo:
     NSMicrophoneUsageDescription: Agentbot uses the microphone for voice dictation into the composer.
     NSSpeechRecognitionUsageDescription: Agentbot transcribes your voice on-device to type messages for you.
@@ -131,6 +139,8 @@ win:
       to: cua-driver.exe
     - from: dist-native/cua-win32-x64/cua-sdk
       to: cua-sdk
+    - from: dist-native/onnxruntime/win32-x64
+      to: onnxruntime
   # No signing config yet (would go under win.signtoolOptions or
   # win.azureSignOptions — eb 26 nests it, there is no top-level
   # win.certificateFile). The installer is unsigned, so SmartScreen shows
@@ -173,6 +183,8 @@ linux:
       to: cua-linux-x64
     - from: dist-native/browser/linux-x64
       to: browser-engine
+    - from: dist-native/onnxruntime/linux-x64
+      to: onnxruntime
     - from: build/linux-agentbot-browser.apparmor
       to: agentbot-browser.apparmor
   desktop:

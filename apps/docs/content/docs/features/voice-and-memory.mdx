@@ -6,14 +6,22 @@ icon: AudioLines
 
 ## Spoken replies
 
-Pick a voice engine in App Settings, choose a voice, and use the speaker control on a response. Auto-speak can read new replies as they arrive. Four engines are available:
+Pick a voice engine in App Settings, choose a voice, and use the speaker control on a response. Auto-speak can read new replies as they arrive. Five engines are available:
 
 - **ElevenLabs** — cloud voices, needs an API key.
 - **Fish Audio** — cloud voices from the Fish Audio library, needs its own API key.
 - **Built-in Mac voices** — the voices already installed on macOS, no key.
+- **Piper (local)** — fast neural voices synthesized entirely in the app. No key, no server, nothing to configure; the voice model downloads on first use.
 - **Chatterbox (local)** — an open-source, MIT-licensed engine reached through an OpenAI-compatible server you configure. With a server on your own machine there is no cloud call; the address can also point at any HTTP(S) server you choose.
 
 The harness rewrites code-heavy Markdown into speech-friendly text before synthesis. Keys remain on the harness and never reach the renderer.
+
+### Piper (local)
+
+Piper runs inside Agentbot itself: the app phonemizes the text with an embedded espeak-ng build and runs the voice's neural (VITS) model with an embedded ONNX runtime. There is no endpoint to point at — to use your own Piper or any other OpenAI-compatible speech server, choose **Custom** instead.
+
+1. In App Settings, pick **Piper (local)**. The default voice (Lessac) downloads on first use — about 80 MB, once.
+2. Pick a voice from the catalogue. Each additional voice downloads its model pair the first time you preview or speak it.
 
 ### Fish Audio
 

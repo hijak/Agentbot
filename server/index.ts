@@ -16919,9 +16919,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const reqBaseUrl =
           typeof body.baseUrl === "string" && body.baseUrl.trim()
             ? body.baseUrl.trim()
-            : reqProvider === "piper" && !cfg.tts?.baseUrl?.trim()
-              ? tts.piper.DEFAULT_PIPER_URL
-              : cfg.tts?.baseUrl;
+            : cfg.tts?.baseUrl;
         const reqKey = typeof body.key === "string" && body.key.trim() ? body.key.trim() : undefined;
         const reqModel = typeof body.model === "string" && body.model.trim() ? body.model.trim() : undefined;
         const effectiveCfg = {

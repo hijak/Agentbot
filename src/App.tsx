@@ -69,7 +69,7 @@ import { SignInPage } from "@/components/SignInPage";
 import { AgentPicker } from "@/components/AgentPicker";
 import { PhoneMenu } from "@/components/PhoneMenu";
 import { TtsSettingsModal } from "@/components/TtsSettingsModal";
-import { PhoneCallOverlay } from "@/components/PhoneCallOverlay";
+import { PhoneCallBanner } from "@/components/PhoneCallBanner";
 import { fuzzyMessageMatch, fuzzySearch, type MessageSearchMatch } from "@/lib/chat-search";
 
 type ChatMessage = {
@@ -651,6 +651,8 @@ export function AppWorkspace({
   // Phone call and TTS state
   const [onCall, setOnCall] = useState(false);
   const [phoneCallSessionId, setPhoneCallSessionId] = useState<string | null>(null);
+  const [phoneCallGreeted, setPhoneCallGreeted] = useState(false);
+  const [callDictation, setCallDictation] = useState("");
   const [ttsSettingsOpen, setTtsSettingsOpen] = useState(false);
   const [ttsVoice, setTtsVoice] = useState(() => {
     if (typeof window !== "undefined") {
@@ -815,7 +817,12 @@ export function AppWorkspace({
     requestAnimationFrame(() => {
       node.scrollTop = node.scrollHeight;
     });
-  }, [chatSessionId, view, messages.length, messages.at(-1)?.content]);
+  }, [chatSessionId, view, messages.length, messages.at(-1)?.content, callDictation]);
+
+  // The call banner lives in its chat, so leaving the chat ends the call.
+  useEffect(() => {
+    if (onCall && (view !== "chat" || chatSessionId !== phoneCallSessionId)) setOnCall(false);
+  }, [onCall, view, chatSessionId, phoneCallSessionId]);
 
   useEffect(() => {
     if (chatSessionId) messageCacheRef.current.set(chatSessionId, messages);
@@ -895,14 +902,20 @@ export function AppWorkspace({
         sourceLabel: `Phone call · ${new Date().toLocaleString()}`,
         title: "Phone call",
       });
+      await refreshSessions(session, agent.id);
+      const callerName = (activeBot && bots.find((b) => b.name === activeBot)?.title) || activeBot || agent.name;
+      // A fresh call opens with the bot saying hello. It's added locally, so
+      // it isn't stored with the session on the server.
       setPhoneCallSessionId(created.id);
       setChatSessionId(created.id);
       setActiveSessionMeta(created);
-      setMessages([]);
+      setMessages([
+        { id: crypto.randomUUID(), role: "assistant", content: `Hi, it's ${callerName}. What can I do for you?` },
+      ]);
       setActivityByMessageId({});
       setPickingTarget(false);
       setView("chat");
-      await refreshSessions(session, agent.id);
+      setPhoneCallGreeted(true);
       setOnCall(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -914,6 +927,7 @@ export function AppWorkspace({
   const openPhoneCall = () => {
     if (!chatSessionId || pickingTarget || busy || streaming || telegramSession) return;
     setPhoneCallSessionId(chatSessionId);
+    setPhoneCallGreeted(false);
     setOnCall(true);
   };
 
@@ -1072,7 +1086,10 @@ export function AppWorkspace({
         },
       },
       {
-        context: overrides?.context ?? (showComputer && view === "chat" ? "computer" : undefined),
+        // The Computer context forces the slow native agent run with the full
+        // desktop tool registry. A call turn needs a spoken answer, so an
+        // open Computer panel doesn't opt the call into it.
+        context: overrides?.context ?? (showComputer && view === "chat" && !onCall ? "computer" : undefined),
         bot: overrides ? overrides.bot : activeBot ?? undefined,
         model: modelKey,
         effort: payload.effort,
@@ -1591,6 +1608,34 @@ export function AppWorkspace({
                     <span className="text-[#7fb7e4]">Messages here are connected to Telegram.</span>
                   </div>
                 ) : null}
+                <PhoneCallBanner
+                  active={onCall}
+                  onEndCall={() => setOnCall(false)}
+                  onSendMessage={async (spokenText) => {
+                    return await send(spokenText, {
+                      attachments: [],
+                      effort,
+                      model: selectedModel ? { key: selectedModel, name: selectedModel } : undefined,
+                    });
+                  }}
+                  onInterrupt={stop}
+                  onLiveTranscript={setCallDictation}
+                  agentName={activeBot || agent.name}
+                  avatarSeed={activeBot ? `${agent.id}/${activeBot}` : agent.id}
+                  avatarSrc={(() => {
+                    const b = activeBot ? bots.find((item) => item.name === activeBot) : undefined;
+                    return b ? effectiveBotAvatar(b) : undefined;
+                  })()}
+                  voice={ttsVoice}
+                  onVoiceChange={handleSelectVoice}
+                  engine={ttsEngine}
+                  bargeInEnabled={bargeInEnabled}
+                  onToggleBargeIn={handleToggleBargeIn}
+                  latestAssistantReply={messages.filter((m) => m.role === "assistant").at(-1)?.content}
+                  isStreamingReply={streaming}
+                  speakLatestOnConnect={phoneCallGreeted}
+                  sessionId={phoneCallSessionId ?? chatSessionId ?? "local-call"}
+                />
                 <div ref={chatScrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-y-contain px-4 py-4">
                   {pickingTarget ? (
                     <div className="mx-auto w-full max-w-lg space-y-4 pt-2">
@@ -1732,6 +1777,11 @@ export function AppWorkspace({
                           <ChatAttachmentPreview attachments={message.attachments} />
                         </div>
                       ))}
+                      {onCall && callDictation && (
+                        <div className="ah-bubble-user italic opacity-70" aria-live="polite">
+                          {callDictation}
+                        </div>
+                      )}
                     </>
                   )}
                 </div>
@@ -1910,33 +1960,6 @@ export function AppWorkspace({
           )}
         </div>
       </div>
-
-      {/* Phone Call Mode Overlay */}
-      <PhoneCallOverlay
-        active={onCall}
-        onEndCall={() => setOnCall(false)}
-        onSendMessage={async (spokenText) => {
-          return await send(spokenText, {
-            attachments: [],
-            effort,
-            model: selectedModel ? { key: selectedModel, name: selectedModel } : undefined,
-          });
-        }}
-        agentName={activeBot || agent.name}
-        avatarSeed={activeBot ? `${agent.id}/${activeBot}` : agent.id}
-        avatarSrc={(() => {
-          const b = activeBot ? bots.find((item) => item.name === activeBot) : undefined;
-          return b ? effectiveBotAvatar(b) : undefined;
-        })()}
-        voice={ttsVoice}
-        onVoiceChange={handleSelectVoice}
-        engine={ttsEngine}
-        bargeInEnabled={bargeInEnabled}
-        onToggleBargeIn={handleToggleBargeIn}
-        latestAssistantReply={messages.filter((m) => m.role === "assistant").at(-1)?.content}
-        isStreamingReply={streaming}
-        sessionId={phoneCallSessionId ?? chatSessionId ?? "local-call"}
-      />
 
       {/* TTS Options Modal Overlay */}
       <TtsSettingsModal

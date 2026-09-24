@@ -11,3 +11,18 @@ under the MIT License.
 
 The secure phone credential transport uses @hpke/core and @hpke/common from
 hpke-js, Copyright 2023-2024 Ajitomi Daisuke, used under the MIT License.
+
+The integrated Piper voice engine synthesizes through onnxruntime-node,
+Copyright (c) Microsoft Corporation, used under the MIT License, and the
+piper_phonemize emscripten module extracted from piper-tts-web, Copyright
+(c) 2024 Jonas Plamann, used under the MIT License.
+
+The renderer's local Kokoro engine runs @huggingface/transformers on
+onnxruntime-web; onnxruntime-common (Copyright (c) Microsoft Corporation,
+MIT) is a direct dependency so the bundled web runtime can resolve it.
+onnxruntime-common, onnxruntime-node, and onnxruntime-web are all used
+under the MIT License. The phonemizer's wasm
+and espeak-ng data files download at first use, pinned by checksum; they
+embed espeak-ng (Copyright 2005-2011 eSpeak contributors, GPLv3) and are
+not redistributed with the app. Provenance lives in
+third_party/piper-phonemize/README.md.

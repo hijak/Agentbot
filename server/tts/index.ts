@@ -1,9 +1,10 @@
-// Voice, wired to config. Four engines live behind this file: ElevenLabs
-// and Fish Audio (each with its own key), the Mac's built-in voices
-// (system-voices.ts, no key), and a local Chatterbox server
-// (chatterbox.ts, an address instead of a key). This file is only the part that reads
-// ~/.agentbot/config.json, picks the engine, and decides whether there
-// is a voice at all.
+// Voice, wired to config. Engines live behind this file, keyed by
+// ~/.agentbot/config.json: cloud keys (ElevenLabs, Fish Audio, Inworld), an
+// OpenAI-compatible server address (Chatterbox, Kokoro, Custom), the Mac's
+// built-in voices (system-voices.ts, no key), in-browser weights (jax-js),
+// and Piper, which synthesizes fully in-process on the harness. This file
+// is only the part that reads the config, picks the engine, and decides
+// whether there is a voice at all.
 import type { AppConfig } from "../config.ts";
 import * as chatterbox from "./chatterbox.ts";
 import * as custom from "./custom.ts";
@@ -130,8 +131,10 @@ export function voiceReady(cfg: AppConfig, voiceId?: string): boolean {
  * settings, not credentials, so they come back in full. */
 export function describeVoice(cfg: AppConfig) {
   const provider = voiceProvider(cfg);
-  const isServerUrlProvider =
-    provider === "chatterbox" || provider === "kokoro" || provider === "piper" || provider === "custom";
+  // Piper synthesizes in-process; a server address is meaningful for the
+  // other three only. (Anyone who wants Piper behind their own HTTP server
+  // has the Custom provider for that.)
+  const isServerUrlProvider = provider === "chatterbox" || provider === "kokoro" || provider === "custom";
   return {
     configured: providerConfigured(cfg),
     ready: voiceConfigured(cfg),
@@ -155,8 +158,7 @@ export async function listVoices(cfg: AppConfig, run?: systemVoices.Runner): Pro
     return baseUrl ? kokoro.listKokoroVoices(baseUrl) : [];
   }
   if (provider === "piper") {
-    const baseUrl = cfg.tts?.baseUrl?.trim() || piper.DEFAULT_PIPER_URL;
-    return piper.listPiperVoices(baseUrl);
+    return piper.listPiperVoices();
   }
   if (provider === "chatterbox") {
     const baseUrl = cfg.tts?.baseUrl?.trim();
@@ -212,10 +214,9 @@ export function speak(cfg: AppConfig, text: string, voiceId?: string, run?: syst
     return kokoro.synthesizeKokoro(text, voice, baseUrl, cfg.tts?.model);
   }
   if (provider === "piper") {
-    const baseUrl = cfg.tts?.baseUrl?.trim() || piper.DEFAULT_PIPER_URL;
     const voice = voiceId || cfg.tts?.voice;
     if (!voice) throw new NoVoiceConfigured("voice");
-    return piper.synthesizePiper(text, voice, baseUrl, cfg.tts?.model);
+    return piper.synthesizePiper(text, voice);
   }
   if (provider === "chatterbox") {
     const baseUrl = cfg.tts?.baseUrl?.trim();

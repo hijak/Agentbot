@@ -119,3 +119,59 @@ describe("TTS Model Manager", () => {
     expect(cancelDownload("non-existent")).toBe(false);
   });
 });
+
+describe("Piper tooling and voices", () => {
+  const bytes = (text: string) => {
+    const encoded = new TextEncoder().encode(text);
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoded);
+        controller.close();
+      },
+    });
+    return new Response(stream, { status: 200 });
+  };
+
+  it("pins the phonemizer tooling behind checksums", () => {
+    const pinned = LOCAL_MODELS.piper.files.filter((f) => f.sha256);
+    expect(pinned.map((f) => f.name).sort()).toEqual(["piper_phonemize.data", "piper_phonemize.wasm"]);
+  });
+
+  it("rejects a tooling file that does not match its pin, and does not keep it", async () => {
+    const base = mkdtempSync(join(tmpdir(), "tts-piper-pin-"));
+    try {
+      await expect(
+        downloadModel("piper", { baseDir: base, fetcher: async () => bytes("imposter bytes") }),
+      ).rejects.toThrow(/checksum mismatch/);
+      expect(existsSync(join(modelDir("piper", base), "piper_phonemize.wasm"))).toBe(false);
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+    }
+  });
+
+  it("downloads a curated voice's model pair beside the engine's own files", async () => {
+    const base = mkdtempSync(join(tmpdir(), "tts-piper-voice-"));
+    try {
+      await downloadModel("piper-voice/en_GB-alan-medium", { baseDir: base, fetcher: async () => bytes("{}") });
+      const dir = modelDir("piper", base);
+      expect(existsSync(join(dir, "en_GB-alan-medium.onnx.json"))).toBe(true);
+      expect(existsSync(join(dir, "en_GB-alan-medium.onnx"))).toBe(true);
+
+      const status = getModelStatus("piper-voice/en_GB-alan-medium", base);
+      expect(status?.downloaded).toBe(true);
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses to build a download URL for a voice outside the catalogue", async () => {
+    const base = mkdtempSync(join(tmpdir(), "tts-piper-voice-"));
+    try {
+      await expect(
+        downloadModel("piper-voice/en_US-impostor-medium", { baseDir: base, fetcher: async () => bytes("{}") }),
+      ).rejects.toThrow(/Unknown local model provider/);
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+    }
+  });
+});

@@ -431,7 +431,7 @@ export function TtsSettingsModal({
       body: JSON.stringify({ tts: { provider: engine } }),
     }).catch(() => {});
 
-    if (engine === "jax-js" || engine === "kokoro") {
+    if (engine === "jax-js" || engine === "kokoro" || engine === "piper") {
       activeActivationRef.current?.abort();
       const controller = new AbortController();
       activeActivationRef.current = controller;
@@ -956,7 +956,7 @@ export function TtsSettingsModal({
 
               <button
                 type="button"
-                onClick={() => onSelectEngine("piper")}
+                onClick={() => handleSelectEngine("piper")}
                 data-active={selectedEngine === "piper" ? "true" : "false"}
                 className={`group flex flex-col p-3 text-left transition-all rounded-none border ${
                   selectedEngine === "piper"
@@ -969,14 +969,34 @@ export function TtsSettingsModal({
                     Piper (Local)
                   </span>
                   {selectedEngine === "piper" ? (
-                    <StatusBadge variant="accent" label="ACTIVE" />
+                    modelStatuses["piper"]?.downloading ? (
+                      <StatusBadge variant="accent" label={`DOWNLOADING ${modelStatuses["piper"]?.progress?.percent ?? 0}%`} />
+                    ) : (
+                      <StatusBadge variant="accent" label={modelStatuses["piper"]?.downloaded ? "ACTIVE · CACHED" : "ACTIVE"} />
+                    )
+                  ) : modelStatuses["piper"]?.downloaded ? (
+                    <StatusBadge variant="subtle" label="CACHED" />
                   ) : (
                     <span className="text-[10px] ah-mono uppercase text-[var(--ah-text-faint)]">SELECT</span>
                   )}
                 </div>
                 <span className="mt-1.5 text-xs text-[var(--ah-text-secondary)]">
-                  Fast local CPU neural TTS — zero config
+                  Fast local neural TTS — synthesizes in-app; the voice downloads on first use
                 </span>
+                {modelStatuses["piper"]?.downloading && (
+                  <div className="mt-2 space-y-1 w-full">
+                    <div className="flex items-center justify-between text-[10px] ah-mono text-[var(--ah-accent-400)]">
+                      <span>Downloading voice model...</span>
+                      <span>{modelStatuses["piper"]?.progress?.percent ?? 0}%</span>
+                    </div>
+                    <div className="h-1 w-full bg-[var(--ah-surface-faint)] overflow-hidden">
+                      <div
+                        className="h-full bg-[var(--ah-accent-400)] transition-all duration-300"
+                        style={{ width: `${modelStatuses["piper"]?.progress?.percent ?? 0}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
               </button>
 
               <button

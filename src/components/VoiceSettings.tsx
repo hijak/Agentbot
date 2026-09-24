@@ -300,7 +300,7 @@ export function VoiceSettings({
                 : provider === "kokoro"
                   ? " Kokoro runs on Apple Silicon unified memory via MLX."
                   : provider === "piper"
-                    ? " the Piper server address is shared by the workspace."
+                    ? " the in-app Piper engine and its voice catalogue are shared by the workspace."
                     : provider === "custom"
                       ? " the custom TTS endpoint address is shared by the workspace."
                       : provider === "chatterbox"
@@ -612,7 +612,8 @@ export function VoiceSettings({
 
       {!workspaceConfigurationLocked && provider === "piper" && (
         <div className="mt-4 text-[12px] text-ink-secondary leading-relaxed">
-          Fast, lightweight local neural TTS with low resource overhead. Uses integrated default endpoint <code className="font-mono text-[11px] text-ink">http://127.0.0.1:5000</code>.
+          Fast, lightweight local neural TTS. Synthesizes in-process in the app — no server to run, no endpoint to
+          configure. Voice models download on first use.
         </div>
       )}
 

@@ -630,25 +630,12 @@ describe("Piper (local)", () => {
     });
   });
 
-  it("speaks with the OpenAI audio-speech shape and default piper model", async () => {
-    refuse = null;
-    seen.length = 0;
+  it("refuses voices outside the curated catalogue before any synthesis", async () => {
     const { speak } = await voice();
-    const audio = await speak(cfg(piperCfg({ baseUrl: stubBase, voice: "en_US-lessac-medium" })), "Hello from Piper");
-    expect(audio.mime).toBe("audio/wav");
-
-    const call = seen.at(-1)!;
-    expect(call.method).toBe("POST");
-    expect(call.url).toBe("/v1/audio/speech");
-    expect(JSON.parse(call.body)).toEqual({
-      model: "piper",
-      input: "Hello from Piper",
-      voice: "en_US-lessac-medium",
-      response_format: "wav",
-    });
+    await expect(speak(cfg(piperCfg({ voice: "en_US-impostor-medium" })), "hi")).rejects.toThrow(/unknown Piper voice/);
   });
 
-  it("lists Piper fallback voices when server is not running", async () => {
+  it("lists the curated Piper voices", async () => {
     const { listVoices } = await voice();
     const voices = await listVoices(cfg(piperCfg()));
     expect(voices.length).toBeGreaterThan(0);

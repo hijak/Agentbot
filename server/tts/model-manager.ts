@@ -5,7 +5,8 @@
 //
 // Downloads are initiated when an engine is activated. Concurrent activation
 // requests share the same active download task.
-import { createWriteStream, existsSync, mkdirSync, renameSync, rmSync, statSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Readable } from "node:stream";
@@ -16,10 +17,16 @@ export interface ModelFile {
   name: string;
   url: string;
   expectedSize: number;
+  /** For files the engine loads as code or data with real trust weight
+   * (the Piper phonemizer wasm): pin the sha256 of the exact bytes we
+   * ship against. A mismatch fails the download loudly. */
+  sha256?: string;
 }
 
 export interface ModelDefinition {
-  provider: "kokoro" | "piper";
+  /** The download key this definition answers to: an engine name ("kokoro",
+   * "piper") or a per-voice key ("piper-voice/<id>"). */
+  provider: string;
   name: string;
   description: string;
   files: ModelFile[];
@@ -74,8 +81,25 @@ export const LOCAL_MODELS: Record<string, ModelDefinition> = {
   piper: {
     provider: "piper",
     name: "Piper (Lessac)",
-    description: "Piper ONNX neural voice model and configuration",
+    description: "Piper phonemizer tooling and the default Lessac ONNX voice",
+    // The phonemizer files are downloaded from unpkg, NOT jsDelivr: jsDelivr
+    // serves a transformed wasm (observed sha256 mismatch) and 403s the
+    // 18 MB espeak data file. unpkg serves the registry tarball's bytes
+    // exactly; the pins below are the authority. Provenance lives in
+    // third_party/piper-phonemize/README.md.
     files: [
+      {
+        name: "piper_phonemize.wasm",
+        url: "https://unpkg.com/piper-tts-web@1.1.2/dist/piper/piper_phonemize.wasm",
+        expectedSize: 629_166,
+        sha256: "2189e43490744c95445e251c38a47063f2ca266bcc30bbb18f692c47ff2bfd23",
+      },
+      {
+        name: "piper_phonemize.data",
+        url: "https://unpkg.com/piper-tts-web@1.1.2/dist/piper/piper_phonemize.data",
+        expectedSize: 18_077_249,
+        sha256: "a9879123581336fc36ae3706ae81c9e67becc388b80b8a4943cef2a78542e6aa",
+      },
       {
         name: "en_US-lessac-medium.onnx.json",
         url: "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx.json",
@@ -87,9 +111,78 @@ export const LOCAL_MODELS: Record<string, ModelDefinition> = {
         expectedSize: 63_000_000,
       },
     ],
-    totalBytes: 63_005_000,
+    totalBytes: 81_711_415,
   },
 };
+
+/** The curated Piper voice catalogue. Voice ids are also file names under
+ * models/piper/ and URL path segments on Hugging Face, so this table is the
+ * single source of truth — an id that is not listed here is rejected before
+ * any download URL is built. */
+export const PIPER_VOICE_MODEL_URLS: Record<string, { onnx: string; json: string; approxBytes: number }> = {
+  "en_US-lessac-medium": {
+    onnx: "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx",
+    json: "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx.json",
+    approxBytes: 63_000_000,
+  },
+  "en_US-amy-medium": {
+    onnx: "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium.onnx",
+    json: "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium.onnx.json",
+    approxBytes: 63_000_000,
+  },
+  "en_US-ryan-medium": {
+    onnx: "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ryan/medium/en_US-ryan-medium.onnx",
+    json: "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ryan/medium/en_US-ryan-medium.onnx.json",
+    approxBytes: 63_000_000,
+  },
+  "en_US-danny-low": {
+    onnx: "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/danny/low/en_US-danny-low.onnx",
+    json: "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/danny/low/en_US-danny-low.onnx.json",
+    approxBytes: 30_000_000,
+  },
+  "en_GB-alan-medium": {
+    onnx: "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/alan/medium/en_GB-alan-medium.onnx",
+    json: "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/alan/medium/en_GB-alan-medium.onnx.json",
+    approxBytes: 63_000_000,
+  },
+  "en_GB-alba-medium": {
+    onnx: "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/alba/medium/en_GB-alba-medium.onnx",
+    json: "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/alba/medium/en_GB-alba-medium.onnx.json",
+    approxBytes: 63_000_000,
+  },
+};
+
+export function isPiperVoiceId(voiceId: string): boolean {
+  return Object.hasOwn(PIPER_VOICE_MODEL_URLS, voiceId);
+}
+
+/** Download key for one voice's model pair (tooling itself is part of the
+ * `piper` definition and only downloads once). */
+export function piperVoiceDownloadKey(voiceId: string): string {
+  return `piper-voice/${voiceId}`;
+}
+
+/** Definitions are addressable by download key: the two engines above, plus
+ * one entry per Piper voice. */
+function definitionFor(provider: string): ModelDefinition | null {
+  if (Object.hasOwn(LOCAL_MODELS, provider)) return LOCAL_MODELS[provider]!;
+  if (provider.startsWith("piper-voice/")) {
+    const voiceId = provider.slice("piper-voice/".length);
+    const urls = PIPER_VOICE_MODEL_URLS[voiceId];
+    if (!urls) return null;
+    return {
+      provider,
+      name: `Piper voice ${voiceId}`,
+      description: `Piper ONNX voice model and configuration for ${voiceId}`,
+      files: [
+        { name: `${voiceId}.onnx.json`, url: urls.json, expectedSize: 5_000 },
+        { name: `${voiceId}.onnx`, url: urls.onnx, expectedSize: urls.approxBytes },
+      ],
+      totalBytes: urls.approxBytes + 5_000,
+    };
+  }
+  return null;
+}
 
 export function modelsBaseDir(baseDir: string = DATA_DIR): string {
   return join(baseDir, "models");
@@ -103,11 +196,17 @@ export function isLocalModelProvider(provider: string): provider is "kokoro" | "
   return Object.hasOwn(LOCAL_MODELS, provider);
 }
 
+/** Voice model pairs land beside the engine's own files under models/piper/,
+ * so a voice download key resolves to the engine's directory. */
+function modelTargetDir(provider: string, baseDir: string): string {
+  return modelDir(provider.startsWith("piper-voice/") ? "piper" : provider, baseDir);
+}
+
 export function getModelStatus(provider: string, baseDir: string = DATA_DIR): ModelStatus | null {
-  const model = LOCAL_MODELS[provider];
+  const model = definitionFor(provider);
   if (!model) return null;
 
-  const dir = modelDir(provider, baseDir);
+  const dir = modelTargetDir(provider, baseDir);
   const fileStatuses: ModelFileStatus[] = model.files.map((f) => {
     const filePath = join(dir, f.name);
     if (existsSync(filePath)) {
@@ -160,7 +259,7 @@ export function cancelDownload(provider: string): boolean {
 }
 
 export function downloadModel(provider: string, options: DownloadOptions = {}): Promise<void> {
-  const model = LOCAL_MODELS[provider];
+  const model = definitionFor(provider);
   if (!model) {
     return Promise.reject(new Error(`Unknown local model provider: ${provider}`));
   }
@@ -193,7 +292,7 @@ export function downloadModel(provider: string, options: DownloadOptions = {}): 
   };
 
   const run = (async () => {
-    const targetDir = modelDir(provider, options.baseDir ?? DATA_DIR);
+    const targetDir = modelTargetDir(provider, options.baseDir ?? DATA_DIR);
     mkdirSync(targetDir, { recursive: true });
 
     const fetchFn = options.fetcher ?? fetch;
@@ -248,6 +347,18 @@ export function downloadModel(provider: string, options: DownloadOptions = {}): 
       try {
         await pipeline(nodeReadable, outStream);
         renameSync(partPath, destPath);
+        // A pinned file is one we treat as trusted input; a byte that
+        // disagrees with the pin means the source changed under us and the
+        // file must not survive to be loaded.
+        if (file.sha256) {
+          const digest = createHash("sha256").update(readFileSync(destPath)).digest("hex");
+          if (digest !== file.sha256) {
+            rmSync(destPath, { force: true });
+            throw new Error(
+              `checksum mismatch for ${file.name}: the download does not match the pinned build — refetch or update the pin`,
+            );
+          }
+        }
       } catch (err) {
         try {
           rmSync(partPath, { force: true });
