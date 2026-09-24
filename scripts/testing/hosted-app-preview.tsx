@@ -12,6 +12,11 @@ import { App } from "../../src/App";
 import { DesktopCapabilitiesProvider } from "../../src/components/DesktopCapabilities";
 import "../../src/styles.css";
 
+// Match production (src/main.tsx pins both) so Tailwind dark: variants and
+// shiki's light-dark() default render the same colors here as in the app.
+document.documentElement.classList.add("dark");
+document.documentElement.style.colorScheme = "dark";
+
 const MOCK_API = "https://preview.agenthosting.local";
 const AGENT_ID = "preview-agent";
 
@@ -31,6 +36,7 @@ const agent = {
   status: "online",
   modelProvider: "anthropic",
   modelName: "claude-sonnet-4-5",
+  config: {} as Record<string, unknown>,
   createdAt: now,
   updatedAt: now,
 };
@@ -149,8 +155,14 @@ function sseReply(sessionId: string): Response {
   const encoder = new TextEncoder();
   const frames = [
     { type: "status", status: "Thinking…" },
-    { type: "text", content: "Mock reply: the hosted prompt bar, " },
-    { type: "text", content: "SSE streaming, and transcript bubbles all work in this preview." },
+    { type: "status", status: "Reviewing the workspace…" },
+    { type: "tool_call", toolName: "WebSearch", message: "Checking the docs" },
+    { type: "tool_result", toolName: "WebSearch", message: "Checked the docs" },
+    { type: "tool_call", toolName: "Bash", message: "Listing recent changes", input: "$ git log --oneline -5" },
+    { type: "status", status: "Reading the diff…" },
+    { type: "tool_result", toolName: "Bash", message: "Listed recent changes", output: "ffb0f3ff Speak phone-call replies sentence by sentence\nad2bdd37 Add custom and Inworld TTS providers" },
+    { type: "text", content: `Mock reply (${agent.modelName}): the hosted prompt bar, ` },
+    { type: "text", content: "SSE streaming, tool calls, and transcript bubbles all work in this preview." },
     { type: "done", sessionId },
   ];
   const stream = new ReadableStream({
@@ -178,6 +190,16 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   const sessionMatch = path.match(/^\/api\/agents\/([^/]+)\/chat\/sessions(?:\/([^/]+))?$/);
 
   if (method === "GET" && path === `/api/agents/${AGENT_ID}`) return json({ agent });
+  // Mirrors the real backend: a partial config patch is merged into the
+  // stored agent config and re-provisions the runtime's model.
+  if (method === "PATCH" && path === `/api/agents/${AGENT_ID}/config`) {
+    const patch = (body?.config ?? {}) as { modelProvider?: unknown; modelName?: unknown };
+    if (typeof patch.modelProvider === "string") agent.modelProvider = patch.modelProvider;
+    if (typeof patch.modelName === "string") agent.modelName = patch.modelName;
+    agent.config = { ...agent.config, ...patch };
+    agent.updatedAt = new Date().toISOString();
+    return json({ ok: true });
+  }
   if (method === "GET" && path === "/api/keys") {
     return json({
       keys: [
@@ -218,6 +240,9 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   }
   if (method === "POST" && path === `/api/agents/${AGENT_ID}/chat`) {
     const target = (body?.sessionId as string | undefined) ?? "sess-welcome";
+    // Recorded so verification recipes can assert what the client sent.
+    (window as unknown as { __previewChatRequests: unknown[] }).__previewChatRequests ??= [];
+    (window as unknown as { __previewChatRequests: unknown[] }).__previewChatRequests.push(body);
     return sseReply(target);
   }
   if (method === "POST" && path === `/api/agents/${AGENT_ID}/chat/stop`) return json({});

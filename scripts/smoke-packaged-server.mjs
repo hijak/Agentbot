@@ -44,6 +44,10 @@ const port = 21000 + Math.floor(Math.random() * 9000);
 // Resources/server tree instead of the repo build.
 try {
   cpSync(process.env.AGENTBOT_SMOKE_DIST ?? join(root, "dist-server"), join(staging, "server"), { recursive: true });
+  assert(
+    statSync(join(staging, "server", "laya-mlx-worker.py")).isFile(),
+    "Packaged server is missing the local Laya-MLX worker",
+  );
   if (browserBundle) cpSync(resolve(browserBundle), join(staging, "browser-engine"), { recursive: true });
 } catch (error) {
   for (const directory of [staging, home]) rmSync(directory, { recursive: true, force: true });

@@ -8,6 +8,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { extname, join } from "node:path";
 
 import { z } from "zod";
+import { installLayaMlx, layaMlxStatus, predictLayaChoice } from "./laya-mlx.ts";
 import { SharedComputers, sharedComputerOperation, sharedComputerRegistration } from "./shared-computers.ts";
 import { SharedComputerControl } from "./shared-computer-control.ts";
 import { RoomHandoffs, type RoomHandoff } from "./room-handoffs.ts";
@@ -10448,6 +10449,46 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     }
     if (!gate.auth) return json(res, gate.status, { error: gate.error });
     const auth = gate.auth;
+    if (
+      path.startsWith("/api/laya-mlx/") &&
+      method !== "OPTIONS" &&
+      auth.kind !== "loopback"
+    ) {
+      return json(res, 403, { error: "Local desktop only" });
+    }
+    if (method === "GET" && path === "/api/laya-mlx/status") {
+      return json(res, 200, layaMlxStatus());
+    }
+    if (method === "POST" && path === "/api/laya-mlx/install") {
+      try {
+        await installLayaMlx();
+        return json(res, 200, layaMlxStatus());
+      } catch (error) {
+        return json(res, 500, {
+          ...layaMlxStatus(),
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    if (method === "POST" && path === "/api/laya-mlx/decision") {
+      const body = z.object({
+        state: z.record(z.string(), z.unknown()),
+        instructions: z.string().trim().min(1).max(1200),
+        criteria: z.record(z.string().min(1).max(100), z.string().max(1200)).refine(
+          (value) => Object.keys(value).length >= 2 && Object.keys(value).length <= 80,
+        ),
+      }).strict().safeParse(await readBody(req, 64_000));
+      if (!body.success) return json(res, 400, { error: "Invalid Laya decision request" });
+      try {
+        const choice = await predictLayaChoice(body.data);
+        const answer = choice && Object.hasOwn(body.data.criteria, choice) ? choice : null;
+        return json(res, 200, { answer });
+      } catch (error) {
+        return json(res, 503, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
     if (HOSTED_WORKSPACE && auth.kind === "session") {
       const failure = workspaceAccess
         ? await workspaceAccess.authorize(req, auth)

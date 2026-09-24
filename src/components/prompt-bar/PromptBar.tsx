@@ -804,7 +804,10 @@ export default function PromptBar({
             closeMenus();
             setActive(0);
           }}
-          onFocus={closeMenus}
+          /* no onFocus close: the bar's own pick buttons refocus this input
+             after opening a menu, and that focus event would snap the menu
+             shut. Real input still closes menus via onChange and the field's
+             pointerdown; outside clicks go through the document listener. */
           onKeyDown={onKeyDown}
         />
 

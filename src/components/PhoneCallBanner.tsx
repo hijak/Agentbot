@@ -11,6 +11,7 @@ import {
 import { synthesizeCallAudio, type ServerCallEngine } from "@/lib/tts/call-audio";
 import { BargeInDetector } from "@/lib/call/barge-in";
 import { takeSpeakableChunks } from "@/lib/call/speech-chunks";
+import { useFetchedVoices } from "@/lib/tts/engine-voices";
 import { voicesForEngine } from "./TtsSettingsModal";
 
 export type CallPhase = "connecting" | "listening" | "sending" | "speaking";
@@ -24,6 +25,17 @@ const SERVER_CALL_ENGINES = new Set<string>(["kokoro", "piper", "system", "eleve
 
 function isServerCallEngine(engine: string): engine is ServerCallEngine {
   return SERVER_CALL_ENGINES.has(engine);
+}
+
+/** Settles when `work` does or when `signal` aborts. Players that miss a
+ * cancellation (a closed AudioContext never fires `ended`) would otherwise
+ * hold the speech queue shut into the next call. */
+function untilAborted(work: Promise<void>, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve();
+  return new Promise<void>((resolve, reject) => {
+    signal.addEventListener("abort", () => resolve(), { once: true });
+    work.then(resolve, reject);
+  });
 }
 
 /** A sentence waiting to be spoken. Server engines start synthesis when the
@@ -94,8 +106,19 @@ export function PhoneCallBanner({
   const [phase, setPhase] = useState<CallPhase>("connecting");
   const [downloadProgress, setDownloadProgress] = useState<JaxProgress | null>(null);
   const [callDuration, setCallDuration] = useState(0);
-  const [micMuted, setMicMuted] = useState(false);
+  const [micMuted, setMicMutedState] = useState(false);
+  /** Read by startSpeechRecognition, which runs from effects and callbacks
+   * created before the latest render. */
+  const micMutedRef = useRef(false);
+  const setMicMuted = (muted: boolean) => {
+    micMutedRef.current = muted;
+    setMicMutedState(muted);
+  };
   const [bargeInTriggered, setBargeInTriggered] = useState(false);
+  /** False from the start of a reply until its first sound plays. The text
+   * streams in seconds before the audio is ready, and "Speaking…" over that
+   * silence reads as the voice having failed. */
+  const [voiceAudible, setVoiceAudible] = useState(false);
   const [callStartedAt, setCallStartedAt] = useState("");
   const [callDirectory, setCallDirectory] = useState("");
   const [savedTranscriptPath, setSavedTranscriptPath] = useState("");
@@ -107,7 +130,11 @@ export function PhoneCallBanner({
   /** The prefix of the latest reply that has already been queued for speech. */
   const spokenTextRef = useRef<string>("");
   const speechQueueRef = useRef<string[]>([]);
-  const speakingRef = useRef(false);
+  /** The signal of the reply whose queue is draining. An aborted signal
+   * left here by an earlier reply doesn't count as speaking. */
+  const speakingRef = useRef<AbortSignal | null>(null);
+  const activeRef = useRef(active);
+  activeRef.current = active;
   const streamingRef = useRef(false);
   /** True from the first queued sentence of a reply until it has all played. */
   const replyActiveRef = useRef(false);
@@ -118,8 +145,11 @@ export function PhoneCallBanner({
   const nativeSpeechRef = useRef(false);
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingUtteranceRef = useRef("");
-  // The engine→voice-list mapping lives with the lists themselves.
-  const voiceOptions = voicesForEngine(engine);
+  // Same list as the voice settings modal: the provider's own voices once
+  // loaded, otherwise the built-in characters.
+  const fetchedVoices = useFetchedVoices(engine, active);
+  const voiceOptions = voicesForEngine(engine, fetchedVoices);
+  const currentVoiceListed = voiceOptions.some((v) => v.id.toLowerCase() === voice.toLowerCase());
 
   const setLiveTranscript = (text: string) => onLiveTranscript?.(text);
 
@@ -217,7 +247,7 @@ export function PhoneCallBanner({
 
   // Start speech recognition
   const startSpeechRecognition = () => {
-    if (typeof window === "undefined" || micMuted) return;
+    if (typeof window === "undefined" || micMutedRef.current) return;
     if (window.ogb?.speechStart) {
       nativeSpeechRef.current = true;
       setPhase("listening");
@@ -335,8 +365,9 @@ export function PhoneCallBanner({
     replyMutedRef.current = false;
     const sent = await onSendMessage(text);
     // A refused send (for example a reply still in flight) would otherwise
-    // leave the call on "Thinking…" with the mic off.
-    if (!sent && active) {
+    // leave the call on "Thinking…" with the mic off. Read the ref: the call
+    // may have ended while the send was pending.
+    if (!sent && activeRef.current) {
       setPhase("listening");
       startSpeechRecognition();
     }
@@ -353,8 +384,13 @@ export function PhoneCallBanner({
     setStorageNote(null);
     spokenTextRef.current = speakLatestOnConnect ? "" : latestAssistantReply ?? "";
     speechQueueRef.current = [];
+    speakingRef.current = null;
+    abortControllerRef.current = null;
     replyActiveRef.current = false;
     replyMutedRef.current = false;
+    // The banner stays mounted between calls, so a mute left on at the end
+    // of the last call would keep this one's mic off.
+    setMicMuted(false);
   }, [active]);
 
   // Connect on call start
@@ -427,10 +463,21 @@ export function PhoneCallBanner({
     return { text, audio };
   };
 
+  const markAudible = (signal: AbortSignal) => {
+    if (!signal.aborted) setVoiceAudible(true);
+  };
+
   const playChunk = async ({ text, audio: pendingAudio }: PreparedChunk, signal: AbortSignal) => {
     if (signal.aborted) return;
     if (engine === "jax-js") {
-      await speakJaxUtterance(text, { voice, signal });
+      // Audio streams out frame by frame from the start of generation.
+      await speakJaxUtterance(text, {
+        voice,
+        signal,
+        onProgress: (p) => {
+          if (p.phase === "generating") markAudible(signal);
+        },
+      });
     } else if (pendingAudio) {
       const blob = await pendingAudio;
       if (signal.aborted) return;
@@ -441,6 +488,7 @@ export function PhoneCallBanner({
           URL.revokeObjectURL(url);
           resolve();
         };
+        audio.onplaying = () => markAudible(signal);
         audio.onended = finish;
         audio.onerror = finish;
         signal.addEventListener("abort", () => {
@@ -459,6 +507,7 @@ export function PhoneCallBanner({
             v.voiceURI.toLowerCase() === voice.toLowerCase(),
         );
         if (matched) utterance.voice = matched;
+        utterance.onstart = () => markAudible(signal);
         utterance.onend = () => resolve();
         utterance.onerror = () => resolve();
         window.speechSynthesis.speak(utterance);
@@ -469,6 +518,7 @@ export function PhoneCallBanner({
   const beginReply = () => {
     replyActiveRef.current = true;
     abortControllerRef.current = new AbortController();
+    setVoiceAudible(false);
     setPhase("speaking");
     stopSpeechRecognition();
     setLiveTranscript("");
@@ -480,12 +530,13 @@ export function PhoneCallBanner({
   /** Hands the mic back once the reply has finished generating and every
    * queued sentence has played. */
   const finishReplyIfDone = () => {
-    if (!replyActiveRef.current || streamingRef.current || speakingRef.current) return;
+    const speaking = speakingRef.current && !speakingRef.current.aborted;
+    if (!replyActiveRef.current || streamingRef.current || speaking) return;
     if (speechQueueRef.current.length) return;
     replyActiveRef.current = false;
     abortControllerRef.current = null;
     bargeInDetectorRef.current?.stop();
-    if (active) {
+    if (activeRef.current) {
       setPhase("listening");
       startSpeechRecognition();
     }
@@ -493,8 +544,9 @@ export function PhoneCallBanner({
 
   const drainSpeechQueue = async () => {
     const signal = abortControllerRef.current?.signal;
-    if (speakingRef.current || !signal || signal.aborted) return;
-    speakingRef.current = true;
+    const draining = speakingRef.current && !speakingRef.current.aborted;
+    if (draining || !signal || signal.aborted) return;
+    speakingRef.current = signal;
     const take = () => {
       const text = speechQueueRef.current.shift();
       return text ? prepareChunk(text, signal) : null;
@@ -504,14 +556,17 @@ export function PhoneCallBanner({
       while (current && !signal.aborted) {
         const upcoming = take();
         try {
-          await playChunk(current, signal);
+          await untilAborted(playChunk(current, signal), signal);
         } catch (err) {
-          if (!signal.aborted) console.warn("Speech playback error:", err);
+          if (!signal.aborted) {
+            console.warn("Speech playback error:", err);
+            setStorageNote(`The voice couldn't be generated: ${err instanceof Error ? err.message : String(err)}`);
+          }
         }
         current = upcoming ?? take();
       }
     } finally {
-      speakingRef.current = false;
+      if (speakingRef.current === signal) speakingRef.current = null;
     }
     if (!signal.aborted) finishReplyIfDone();
   };
@@ -565,7 +620,10 @@ export function PhoneCallBanner({
             : "Listening…"
           : phase === "sending"
             ? "Thinking…"
-            : "Speaking…";
+            : voiceAudible
+              ? "Speaking…"
+              : "Preparing voice…";
+  const audible = phase === "speaking" && voiceAudible;
 
   const saveHint = storageNote
     ?? (savedTranscriptPath ? `Transcript saved to ${savedTranscriptPath}` : callDirectory ? `Transcripts save to ${callDirectory}` : undefined);
@@ -578,7 +636,7 @@ export function PhoneCallBanner({
     >
       <div className="flex min-w-0 flex-1 items-center gap-2.5">
         <div className="relative shrink-0">
-          {phase === "speaking" && (
+          {audible && (
             <span className="absolute inset-0 rounded-full border border-[var(--ah-accent-400)]/60 animate-ping" />
           )}
           <BlobAvatar seed={avatarSeed || agentName} src={avatarSrc} label={agentName} size={28} />
@@ -594,7 +652,8 @@ export function PhoneCallBanner({
             {phase === "connecting" && <Loader2 size={11} className="shrink-0 animate-spin text-[var(--ah-accent-300)]" />}
             {phase === "listening" && !micMuted && <Mic size={11} className="shrink-0 text-[var(--ah-accent-300)] animate-pulse" />}
             {phase === "sending" && <Radio size={11} className="shrink-0 text-[var(--ah-warning)] animate-spin" />}
-            {phase === "speaking" && <Volume2 size={11} className="shrink-0 text-[var(--ah-accent-300)]" />}
+            {phase === "speaking" && !voiceAudible && <Loader2 size={11} className="shrink-0 animate-spin text-[var(--ah-accent-300)]" />}
+            {audible && <Volume2 size={11} className="shrink-0 text-[var(--ah-accent-300)]" />}
             <span className="truncate">
               {statusLabel} · Voice: {voiceOptions.find((v) => v.id === voice)?.name ?? voice} · {callEngineLabel(engine)}
             </span>
@@ -611,6 +670,7 @@ export function PhoneCallBanner({
           title="Character voice"
           aria-label="Character voice"
         >
+          {!currentVoiceListed && voice && <option value={voice}>{voice}</option>}
           {voiceOptions.map((v) => (
             <option key={v.id} value={v.id}>
               {v.name}

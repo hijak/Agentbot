@@ -37,6 +37,7 @@ import {
   runHostedSchedule,
   stopHostedChat,
   streamHostedChat,
+  updateHostedAgentModel,
   type HostedAgent,
   type HostedBot,
   type HostedBotTeamTemplate,
@@ -60,11 +61,13 @@ import {
 } from "@/lib/agenthosting/open-computer-snapshot";
 import { Chatroom } from "@/components/Chatroom";
 import { ChatMarkdownView } from "@/components/ChatMarkdownView";
-import { ActivityTrail, foldActivity, type ActivityEntry } from "@/components/ActivityTrail";
+import { foldActivity, type ActivityEntry } from "@/components/ActivityTrail";
+import { ThoughtTrail } from "@/components/ThoughtTrail";
 import { PersonaLibrary } from "@/components/PersonaLibrary";
 import { ChatPromptBar, filesToAttachments, type PromptBarSendPayload } from "@/components/ChatPromptBar";
 import { SchedulePanel } from "@/components/SchedulePanel";
 import { TeachTask } from "@/components/TeachTask";
+import { LayaMlxControl } from "@/components/LayaMlxControl";
 import { SignInPage } from "@/components/SignInPage";
 import { AgentPicker } from "@/components/AgentPicker";
 import { PhoneMenu } from "@/components/PhoneMenu";
@@ -641,7 +644,6 @@ export function AppWorkspace({
   const [chatroomSeedIds, setChatroomSeedIds] = useState<string[] | null>(null);
   const [chatroomKey, setChatroomKey] = useState(0);
 
-  const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const abortRef = useRef<(() => void) | null>(null);
@@ -811,13 +813,37 @@ export function AppWorkspace({
     };
   }, [agentId, loadChat, refreshBots, refreshSchedules, refreshSessions, refreshTemplates]);
 
+  // Rolling transcript: anchor to the bottom when the view, session, or
+  // message list changes, then follow any content growth (streaming chunks,
+  // expanding tool cards) only while the user is still parked near the
+  // bottom — scrolling up to read history pauses the follow.
+  const chatStuckRef = useRef(true);
   useEffect(() => {
     const node = chatScrollRef.current;
     if (!node) return;
+    chatStuckRef.current = true;
     requestAnimationFrame(() => {
       node.scrollTop = node.scrollHeight;
     });
-  }, [chatSessionId, view, messages.length, messages.at(-1)?.content, callDictation]);
+  }, [chatSessionId, view, messages.length, callDictation]);
+
+  useEffect(() => {
+    const node = chatScrollRef.current;
+    if (!node) return;
+    const onScroll = () => {
+      chatStuckRef.current = node.scrollHeight - node.scrollTop - node.clientHeight < 80;
+    };
+    const stick = () => {
+      if (chatStuckRef.current) node.scrollTop = node.scrollHeight;
+    };
+    const observer = new MutationObserver(stick);
+    observer.observe(node, { childList: true, subtree: true, characterData: true });
+    node.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      observer.disconnect();
+      node.removeEventListener("scroll", onScroll);
+    };
+  }, [chatSessionId, view]);
 
   // The call banner lives in its chat, so leaving the chat ends the call.
   useEffect(() => {
@@ -840,7 +866,6 @@ export function AppWorkspace({
     setChatroomSeedIds(null);
     setView("chat");
     setError(null);
-    setStatus(null);
   };
 
   const togglePickedTarget = (id: string) => {
@@ -940,7 +965,6 @@ export function AppWorkspace({
     setChatroomKey((k) => k + 1);
     setView("chatroom");
     setError(null);
-    setStatus(null);
   };
 
   const openExistingRoom = (roomId: string) => {
@@ -960,6 +984,11 @@ export function AppWorkspace({
       setActiveBot(null);
       setPickingTarget(false);
       setChatroomSeedIds(null);
+      // Sessions pin no model on the hosted backend, so the picker mirrors
+      // the agent's configured model rather than whatever was last picked.
+      const agentModel =
+        agent.modelName?.trim() || agent.config?.modelName?.trim() || models[0]?.key || "";
+      if (agentModel) setSelectedModel(agentModel);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -989,6 +1018,43 @@ export function AppWorkspace({
     }
   };
 
+  // A model picked in the prompt bar switches the agent's configured model.
+  // The hosted backend pins no model per chat session, and its per-turn model
+  // override only reaches compat-path turns — native (computer-context) turns
+  // ignore it — so the durable agent-config update is the one switch that
+  // changes what every turn of the session runs on.
+  const pickModel = (key: string) => {
+    setSelectedModel(key);
+    const agentModel = agent?.modelName?.trim() || agent?.config?.modelName?.trim() || "";
+    if (!session || !agent || !key || key === agentModel) return;
+    // Placeholder row shown while the model list loads — nothing real to switch to.
+    if (!models.some((model) => model.key === key)) return;
+    const provider =
+      models.find((model) => model.key === key)?.provider ??
+      agent.modelProvider ??
+      agent.config?.modelProvider ??
+      undefined;
+    updateHostedAgentModel(session, agent.id, {
+      modelName: key,
+      ...(provider ? { modelProvider: provider } : {}),
+    })
+      .then(() => {
+        setAgent((prev) =>
+          prev
+            ? {
+                ...prev,
+                modelName: key,
+                ...(provider ? { modelProvider: provider } : {}),
+              }
+            : prev,
+        );
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : String(err));
+        if (agentModel) setSelectedModel(agentModel);
+      });
+  };
+
   const send = async (
     textRaw: string,
     payload: PromptBarSendPayload,
@@ -1011,11 +1077,7 @@ export function AppWorkspace({
     const text = textRaw.trim() || (attachments.length ? "Uploaded attachment(s)" : "");
     if (!text) return false;
 
-    const modelKey = payload.model?.key?.trim() || selectedModel.trim() || undefined;
-    if (payload.model?.key) setSelectedModel(payload.model.key);
-
     setError(null);
-    setStatus(payload.effort !== "Medium" ? `Effort · ${payload.effort}` : null);
     const userMsg: ChatMessage = {
       id: crypto.randomUUID(),
       role: "user",
@@ -1049,7 +1111,12 @@ export function AppWorkspace({
             [assistantId]: foldActivity(prev[assistantId] ?? [], { type: "finalize" }),
           }));
         },
-        onStatus: setStatus,
+        onStatus: (message) => {
+          setActivityByMessageId((prev) => ({
+            ...prev,
+            [assistantId]: foldActivity(prev[assistantId] ?? [], { type: "status", message }),
+          }));
+        },
         onDone: (id) => {
           if (id) {
             setChatSessionId(id);
@@ -1060,7 +1127,6 @@ export function AppWorkspace({
             [assistantId]: foldActivity(prev[assistantId] ?? [], { type: "finalize" }),
           }));
           setStreaming(false);
-          setStatus(null);
         },
         onError: (err) => {
           const errorEvent = { type: "error", message: err };
@@ -1074,15 +1140,12 @@ export function AppWorkspace({
               : err,
           );
           setStreaming(false);
-          setStatus(null);
         },
         onTool: (event) => {
           setActivityByMessageId((prev) => ({
             ...prev,
             [assistantId]: foldActivity(prev[assistantId] ?? [], event),
           }));
-          if (event.message) setStatus(event.message);
-          else if (event.toolName) setStatus(`${event.type}: ${event.toolName}`);
         },
       },
       {
@@ -1091,9 +1154,14 @@ export function AppWorkspace({
         // open Computer panel doesn't opt the call into it.
         context: overrides?.context ?? (showComputer && view === "chat" && !onCall ? "computer" : undefined),
         bot: overrides ? overrides.bot : activeBot ?? undefined,
-        model: modelKey,
         effort: payload.effort,
         attachments,
+        browserDecisionEngine:
+          (overrides?.context ?? (showComputer && view === "chat" && !onCall ? "computer" : undefined)) === "computer" &&
+          !activeBot &&
+          localStorage.getItem("agentbot_laya_mlx_enabled") === "true"
+            ? "laya-mlx"
+            : undefined,
       },
     );
     return true;
@@ -1125,9 +1193,6 @@ export function AppWorkspace({
         ].join("\n"),
         {
           attachments: [],
-          model: selectedModel
-            ? { key: selectedModel, name: selectedModel }
-            : undefined,
           effort: "High",
         },
         {
@@ -1149,7 +1214,6 @@ export function AppWorkspace({
     abortRef.current?.();
     abortRef.current = null;
     setStreaming(false);
-    setStatus(null);
     if (session && agent && chatSessionId) {
       void stopHostedChat(session, agent.id, chatSessionId).catch(() => {
         // Abort already stopped the stream client-side.
@@ -1615,7 +1679,6 @@ export function AppWorkspace({
                     return await send(spokenText, {
                       attachments: [],
                       effort,
-                      model: selectedModel ? { key: selectedModel, name: selectedModel } : undefined,
                     });
                   }}
                   onInterrupt={stop}
@@ -1770,9 +1833,10 @@ export function AppWorkspace({
                           ) : streaming && message.role === "assistant" ? (
                             <span className="blink-cursor text-[var(--ah-accent-300)]" />
                           ) : null}
-                          <ActivityTrail
+                          <ThoughtTrail
                             entries={activityByMessageId[message.id] ?? []}
                             live={streaming && message.role === "assistant" && message.id === messages.at(-1)?.id}
+                            reply={message.content}
                           />
                           <ChatAttachmentPreview attachments={message.attachments} />
                         </div>
@@ -1782,14 +1846,14 @@ export function AppWorkspace({
                           {callDictation}
                         </div>
                       )}
+                      {error ? (
+                        <div className="rounded-[var(--rb-r-md,8px)] border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-400">
+                          {error}
+                        </div>
+                      ) : null}
                     </>
                   )}
                 </div>
-                {(status || error) && (
-                  <div className="border-t border-[var(--ah-border-subtle)] px-4 py-2 text-xs text-[var(--ah-text-secondary)]">
-                    {error ? <span className="ah-fault">{error}</span> : status}
-                  </div>
-                )}
                 {telegramSession ? (
                   <div className="border-t border-[var(--ah-border-subtle)] px-4 py-3 text-xs text-[var(--ah-text-muted)]">
                     Telegram sessions are read-only in Agentbot. Reply from Telegram to continue the conversation.
@@ -1825,7 +1889,7 @@ export function AppWorkspace({
                       }
                       onSend={(text, payload) => void send(text, payload)}
                       onStop={stop}
-                      onModelChange={(model) => setSelectedModel(model.key)}
+                      onModelChange={(model) => pickModel(model.key)}
                       onEffortChange={setEffort}
                     />
                   </div>
@@ -1853,7 +1917,7 @@ export function AppWorkspace({
                     setChatroomRooms(rooms);
                     setActiveRoomId(roomId);
                     setChatroomState((prev) => ({
-                      ...(prev ?? {}),
+                      ...prev,
                       activeRoomId: roomId,
                       rooms: [
                         ...((prev?.rooms ?? []).filter((room) => !roomBelongsToAgent(room, agent.id))),
@@ -1926,6 +1990,7 @@ export function AppWorkspace({
                 teachDisabled={streaming || busy}
                 onTeachDryRun={dryRunTaughtTask}
               />
+              <LayaMlxControl session={session} agent={agent} />
               {!computerFullscreen && (
                 <ComputerScheduleList
                   schedules={schedules}

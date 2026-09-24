@@ -59,6 +59,33 @@ async function hostedFetch(
   return fetch(`${session.apiURL}${path}`, { ...init, headers });
 }
 
+export function openComputerApiPath(surfaceId: string, path: string): string {
+  return `/agent-extensions/open-computer/${encodeURIComponent(surfaceId)}${path}`;
+}
+
+export async function warmOpenComputerExtensionSession(
+  session: HostedSession,
+  surfaceId: string,
+): Promise<string> {
+  const { url } = await mintOpenComputerSession(session, surfaceId);
+  const absolute = new URL(url, session.apiURL);
+  const token = absolute.searchParams.get("extension_token");
+  if (!token) throw new Error("Open Computer did not issue a relay session token");
+  return token;
+}
+
+export async function fetchOpenComputerRelay(
+  session: HostedSession,
+  surfaceId: string,
+  path: string,
+  init: RequestInit = {},
+  extensionToken?: string,
+): Promise<Response> {
+  const url = new URL(openComputerApiPath(surfaceId, path), session.apiURL);
+  if (extensionToken) url.searchParams.set("extension_token", extensionToken);
+  return hostedFetch(session, `${url.pathname}${url.search}`, init);
+}
+
 export async function listHostedAgents(session: HostedSession): Promise<HostedAgent[]> {
   const res = await hostedFetch(session, "/api/agents");
   if (!res.ok) {
@@ -78,6 +105,24 @@ export async function getHostedAgent(session: HostedSession, agentId: string): P
   const body = (await res.json()) as { agent?: HostedAgent };
   if (!body.agent) throw new Error("Agent not found");
   return body.agent;
+}
+
+/** Switch the agent's configured model. Chat sessions pin no model on the
+ * hosted backend, and the per-turn `model` override is dropped on native
+ * (computer-context) turns, so a model picked in the UI must be written to
+ * the agent config — the backend merges this partial patch into the stored
+ * config and re-provisions the runtime with the new model. */
+export async function updateHostedAgentModel(
+  session: HostedSession,
+  agentId: string,
+  input: { modelProvider?: string | null; modelName: string },
+): Promise<void> {
+  const res = await hostedFetch(session, `/api/agents/${encodeURIComponent(agentId)}/config`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ config: input }),
+  });
+  await readJson(res, "Failed to update the agent model");
 }
 
 export function openComputerSurface(agent: HostedAgent): {
@@ -162,10 +207,6 @@ export type HostedTeachSession = {
   error?: string;
   result?: HostedTeachTaskResult | null;
 };
-
-function openComputerApiPath(surfaceId: string, path: string): string {
-  return `/agent-extensions/open-computer/${encodeURIComponent(surfaceId)}${path}`;
-}
 
 export async function startHostedTeachSession(
   session: HostedSession,
@@ -836,6 +877,7 @@ export async function streamHostedChat(
     attachments?: HostedChatAttachment[];
     memoryCapture?: boolean;
     orchestration?: "chatroom";
+    browserDecisionEngine?: "laya-mlx";
   },
 ): Promise<() => void> {
   const controller = new AbortController();
@@ -854,6 +896,7 @@ export async function streamHostedChat(
           attachments: options?.attachments,
           memoryCapture: options?.memoryCapture,
           orchestration: options?.orchestration,
+          browserDecisionEngine: options?.browserDecisionEngine,
         }),
         signal: controller.signal,
       });

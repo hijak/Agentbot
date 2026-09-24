@@ -119,3 +119,9 @@ const piMcpExtSrc = join(server, "drivers", "pi-mcp-extension.ts");
 const piMcpExtDest = join(root, "dist-server", "drivers", "pi-mcp-extension.ts");
 mkdirSync(dirname(piMcpExtDest), { recursive: true });
 copyFileSync(piMcpExtSrc, piMcpExtDest);
+
+// The bundled server launches this persistent Python worker as a data file.
+const layaWorkerSrc = join(server, "laya-mlx-worker.py");
+const layaWorkerDest = join(root, "dist-server", "laya-mlx-worker.py");
+mkdirSync(dirname(layaWorkerDest), { recursive: true });
+copyFileSync(layaWorkerSrc, layaWorkerDest);

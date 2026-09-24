@@ -1,6 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { refreshEngineVoices } from "@/lib/tts/engine-voices";
 import { PhoneCallBanner } from "./PhoneCallBanner";
 
 const renderBanner = (engine: string, voice: string, active = true) =>
@@ -50,5 +51,27 @@ describe("PhoneCallBanner", () => {
   it("falls back to the System label for an unrecognized engine", () => {
     vi.stubGlobal("window", {});
     expect(renderBanner("not-an-engine", "azelma")).toContain("Voice: Azelma · System");
+  });
+
+  it("keeps a voice missing from the list selected instead of showing the first option", () => {
+    vi.stubGlobal("window", {});
+    const html = renderBanner("fish", "my-cloned-voice");
+    expect(html).toContain('<option value="my-cloned-voice" selected="">my-cloned-voice</option>');
+  });
+
+  it("offers the provider's own voices, the same list the voice settings show", async () => {
+    vi.stubGlobal("window", {});
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        json: async () => ({ voices: [{ id: "voice-george", label: "George", description: "Warm" }] }),
+      })),
+    );
+    expect(await refreshEngineVoices("elevenlabs")).toBe(true);
+    const html = renderBanner("elevenlabs", "voice-george");
+    expect(html).toContain("Voice: George · ElevenLabs");
+    expect(html).toContain('<option value="voice-george" selected="">George</option>');
+    // The built-in ElevenLabs list is replaced, not appended to.
+    expect(html).not.toContain(">Rachel</option>");
   });
 });

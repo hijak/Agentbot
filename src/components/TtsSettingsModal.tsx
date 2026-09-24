@@ -15,6 +15,12 @@ import {
 } from "@/lib/tts/model-client";
 import { speakKokoroUtterance } from "@/lib/tts/kokoro-tts";
 import { readTtsKey, saveTtsKey } from "@/lib/tts/tts-keys";
+import {
+  refreshEngineVoices as fetchEngineVoices,
+  useFetchedVoices,
+  type FetchedVoiceEngine,
+  type TtsVoiceOption,
+} from "@/lib/tts/engine-voices";
 import { useDesktopCapabilities } from "./DesktopCapabilities";
 import { CornerMarkers } from "./andromeda/CornerMarkers";
 import { StatusBadge } from "./andromeda/StatusBadge";
@@ -104,11 +110,11 @@ export const CUSTOM_CHARACTER_VOICES = [
   { id: "shimmer", name: "Shimmer", desc: "Clear, expressive and crisp", sample: "Hi! I'm Shimmer. Ready whenever you need." },
 ] as const;
 
-export type TtsVoiceOption = { id: string; name: string; desc: string; sample: string };
+export type { TtsVoiceOption };
 
 /** The voice list for one engine: the provider's dynamic list once it has
  * loaded, otherwise the built-in character list. Shared by this modal and
- * the phone-call overlay so an engine's list is spelled out once. */
+ * the phone-call banner so an engine's list is spelled out once. */
 export function voicesForEngine(
   engine: string,
   dynamicVoices?: Record<string, TtsVoiceOption[]>,
@@ -214,7 +220,7 @@ export function TtsSettingsModal({
   const [customConfigSaved, setCustomConfigSaved] = useState(false);
   const [customConfigured, setCustomConfigured] = useState(false);
 
-  const [dynamicVoices, setDynamicVoices] = useState<Record<string, TtsVoiceOption[]>>({});
+  const dynamicVoices = useFetchedVoices(selectedEngine, open);
 
   useEffect(() => {
     if (!open) return;
@@ -254,45 +260,18 @@ export function TtsSettingsModal({
       .catch(() => {});
   }, [open]);
 
-  // One fetch-to-voices path: the open effect and every key Save handler
-  // funnel through it, so the list mapping and the CONFIGURED flags cannot
-  // drift apart per engine.
-  const refreshEngineVoices = (engine: "system" | "elevenlabs" | "fish" | "inworld" | "custom" | "piper") => {
-    void fetch(`/api/tts/voices?provider=${engine}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (!Array.isArray(data?.voices) || data.voices.length === 0) return;
-        const mapped: TtsVoiceOption[] = data.voices.map((v: any) => ({
-          id: v.id,
-          name: v.label || v.id,
-          desc: v.description || v.id,
-          sample: `Hello, I'm ${v.label || v.id}. Ready for our call.`,
-        }));
-        setDynamicVoices((prev) => ({ ...prev, [engine]: mapped }));
-        if (engine === "elevenlabs") setElevenlabsConfigured(true);
-        if (engine === "fish") setFishConfigured(true);
-        if (engine === "inworld") setInworldConfigured(true);
-        if (engine === "custom") setCustomConfigured(true);
-      })
-      .catch(() => {});
-  };
-
+  // A provider that lists voices has a working key, so its CONFIGURED flag
+  // follows the shared list. Key Saves refetch through refreshEngineVoices.
   useEffect(() => {
-    if (!open) return;
-    if (
-      selectedEngine === "system" ||
-      selectedEngine === "elevenlabs" ||
-      selectedEngine === "fish" ||
-      selectedEngine === "inworld" ||
-      selectedEngine === "custom" ||
-      selectedEngine === "piper"
-    ) {
-      // Already loaded on an earlier open: a provider's list only changes
-      // through a Save, which refetches on its own.
-      if (dynamicVoices[selectedEngine]?.length) return;
-      refreshEngineVoices(selectedEngine);
-    }
-  }, [open, selectedEngine]);
+    if (dynamicVoices.elevenlabs?.length) setElevenlabsConfigured(true);
+    if (dynamicVoices.fish?.length) setFishConfigured(true);
+    if (dynamicVoices.inworld?.length) setInworldConfigured(true);
+    if (dynamicVoices.custom?.length) setCustomConfigured(true);
+  }, [dynamicVoices]);
+
+  const refreshEngineVoices = (engine: FetchedVoiceEngine) => {
+    void fetchEngineVoices(engine);
+  };
 
   const handleSaveElevenlabsKey = async () => {
     const k = elevenlabsKey.trim();
